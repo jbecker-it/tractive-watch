@@ -26,7 +26,9 @@ enum class Screen { Login, Home, Map }
 
 class MainActivity : ComponentActivity() {
 
-    private val googleState = GoogleLoginState(applicationContext)
+    // WICHTIG: lazy — muss NICHTS in der Activity-Konstruktion (Instantiation)
+    // auslösen, sonst "Unable to instantiate activity". Erst bei Bedarf laden.
+    private val googleState: GoogleLoginState by lazy { GoogleLoginState(applicationContext) }
 
     private val googleSignInClient: GoogleSignInClient by lazy {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
