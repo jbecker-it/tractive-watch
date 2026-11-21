@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Kotlin
+.kotlin/
+*.hprof
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Android
+captures/
+.cxx/
+local.properties
+
+# OS
+.DS_Store
