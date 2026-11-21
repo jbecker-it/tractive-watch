@@ -1,123 +1,149 @@
 package de.jbecker.tractivewatch
 
-import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Typeface
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.CrashLog
-import de.jbecker.tractivewatch.ui.TractiveWatchTheme
 
 /**
- * Crash-Info (Launcher-Icon): zeigt Version, letzten Crash, Log-URL und das
- * volle Log — als Compose-Layout (rund-sicher, wie der Rest der App).
- * Alle Datenzugriffe sind in runCatching gehüllt, damit dieser Screen nie selbst crasht.
+ * Crash-Info (Launcher-Icon): zeigt Version, letzten Crash, Log-URL,
+ * das volle Log UND den Event-Trail (App-EVENT-LOG) — damit ist auch
+ * ohne adb logcat sichtbar, an welcher Stelle der Login hängen blieb.
+ *
+ * v1.6: plain Views (die Compose-Variante zeigte einen schwarzen Screen;
+ * die plain-View-Variante v1.4 hat sich auf der Watch als rendern bewährt)
+ * + Wear-Plattform-Theme (rund-sicher) + harter Fallback, falls etwas wirft.
  */
 class CrashInfoActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val version = "${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
-        val summary = runCatching { CrashLog.lastSummary(this) }.getOrNull()
-        val url = runCatching { CrashLog.lastUrl(this) }.getOrNull()
-        val log = runCatching { CrashLog.fileContent(this, 8000) }.getOrNull()
-        val allText = buildString {
-            append("Tractive Watch v").append(version).append('\n')
-            summary?.let { append(it).append('\n') }
-            url?.let { append("Log-URL: ").append(it).append('\n') }
-            append("===== CRASH-LOG =====\n")
-            log?.let { append(it) } ?: append("(leer — keine lokale Log-Datei)")
-        }
-
-        setContent {
-            TractiveWatchTheme {
-                var uploadedUrl by remember { mutableStateOf(url) }
-                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("Crash-Info — v$version", fontSize = 13.sp)
-
-                    Text(
-                        summary ?: "(kein Crash aufgezeichnet)",
-                        fontSize = 10.sp,
-                    )
-
-                    Text(
-                        (uploadedUrl?.let { "Log-URL:\n$it" })
-                            ?: "(noch keine Log-URL — Button unten hochladen)",
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-
-                    Text(
-                        log ?: "(keine Log-Datei gefunden)",
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-
-                    Button(onClick = {
-                        clipboard.setText(AnnotatedString(allText))
-                        Toast.makeText(this@CrashInfoActivity, "Kopiert", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Alles kopieren")
-                    }
-                    Button(onClick = {
-                        val newUrl = runCatching { CrashLog.reupload(this@CrashInfoActivity) }.getOrNull()
-                        if (newUrl != null) {
-                            uploadedUrl = newUrl
-                            clipboard.setText(AnnotatedString(newUrl))
-                            Toast.makeText(this@CrashInfoActivity, "Hochgeladen + kopiert", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(this@CrashInfoActivity, "Hochladen fehlgeschlagen", Toast.LENGTH_LONG).show()
-                        }
-                    }) {
-                        Text("Log hochladen + kopieren")
-                    }
-                    Button(onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, allText)
-                            putExtra(Intent.EXTRA_SUBJECT, "Tractive Watch Crash-Log")
-                        }
-                        runCatching {
-                            startActivity(Intent.createChooser(send, "Crash-Log teilen"))
-                        }
-                    }) {
-                        Text("Teilen")
-                    }
-                    Button(onClick = {
-                        CrashLog.clear(this@CrashInfoActivity)
-                        Toast.makeText(this@CrashInfoActivity, "Zurückgesetzt", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Zurücksetzen")
-                    }
+        try {
+            buildUi()
+            AppLog.record(this, "Crash-Info: Screen angezeigt")
+        } catch (t: Throwable) {
+            // Letzter Ausweg: IMMER etwas Lesbares zeigen, egal was schiefgeht
+            AppLog.record(this, "Crash-Info: buildUi FATAL ${t.javaClass.simpleName}: ${t.message}")
+            runCatching {
+                val fallback = TextView(this).apply {
+                    text = "Crash-Info konnte nicht geladen werden:\n\n" +
+                        "${t.javaClass.name}: ${t.message}\n\n" +
+                        "Voller Event-Trail:\n" + AppLog.content(this@CrashInfoActivity)
+                    textSize = 11f
+                    setTypeface(Typeface.MONOSPACE)
+                    val pad = (48 * resources.displayMetrics.density).toInt()
+                    setPadding(pad, pad, pad, pad)
                 }
+                setContentView(
+                    fallback,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
             }
         }
+    }
+
+    private fun buildUi() {
+        val version = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
+        val summary = runCatching { CrashLog.lastSummary(this) }.getOrNull()
+        val url = runCatching { CrashLog.lastUrl(this) }.getOrNull()
+        val full = runCatching { CrashLog.fileContent(this, 9000) }.getOrNull()
+        val allText = buildString {
+            append("Tractive Watch ").append(version).append('\n')
+            if (summary != null) { appendLine(summary); appendLine() }
+            if (url != null) { appendLine("Log-URL: $url"); appendLine() }
+            if (full.isNullOrBlank()) {
+                appendLine("(noch keine Crash-/Event-Daten — App starten und Log-Schritt ausführen)")
+            } else {
+                append(full)
+            }
+        }
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val pad = (24 * resources.displayMetrics.density).toInt()
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+        }
+
+        root.addView(TextView(this).apply {
+            text = "Crash-Info — $version"
+            textSize = 14f
+            setTypeface(Typeface.DEFAULT_BOLD)
+        })
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            )
+            isVerticalScrollBarEnabled = false
+        }
+        scroll.addView(TextView(this).apply {
+            text = allText
+            textSize = 10.5f
+            setTypeface(Typeface.MONOSPACE)
+            setLineSpacing(0f, 1.15f)
+        })
+        root.addView(scroll)
+
+        fun button(label: String, action: () -> Unit) = Button(this).apply {
+            text = label
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setOnClickListener { runCatching(action) }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            lp.topMargin = (8 * resources.displayMetrics.density).toInt()
+            layoutParams = lp
+        }
+
+        root.addView(button("Alles kopieren") {
+            clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", allText))
+            Toast.makeText(this, "Kopiert", Toast.LENGTH_SHORT).show()
+        })
+        root.addView(button("Log neu hochladen + kopieren") {
+            val newUrl = runCatching { CrashLog.reupload(this) }.getOrNull()
+            if (newUrl != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
+                Toast.makeText(this, "Hochgeladen + kopiert", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Hochladen fehlgeschlagen", Toast.LENGTH_LONG).show()
+            }
+        })
+        root.addView(button("Zurücksetzen") {
+            runCatching { CrashLog.clear(this) }
+            Toast.makeText(this, "Zurückgesetzt", Toast.LENGTH_SHORT).show()
+        })
+
+        setContentView(
+            root,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
     }
 }

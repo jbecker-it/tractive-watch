@@ -38,6 +38,7 @@ class TrampolineActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        de.jbecker.tractivewatch.data.AppLog.record(this, "Trampoline-Start (Launcher-Icon)")
 
         // Test-Konstruktion: wirft, wenn Class-Loading oder der Konstruktor fehlschlägt
         val constructionError = runCatching {
@@ -45,6 +46,7 @@ class TrampolineActivity : ComponentActivity() {
         }.exceptionOrNull()
 
         if (constructionError == null) {
+            de.jbecker.tractivewatch.data.AppLog.record(this, "Trampoline: MainActivity-Konstruktion OK -> MainActivity wird gestartet")
             try {
                 startActivity(
                     Intent(this, MainActivity::class.java)
@@ -58,6 +60,10 @@ class TrampolineActivity : ComponentActivity() {
             }
             finish()
         } else {
+            de.jbecker.tractivewatch.data.AppLog.record(
+                this,
+                "Trampoline: FATAL Konstruktionsfehler -> Fehler-Screen: ${constructionError.javaClass.simpleName}: ${constructionError.message}"
+            )
             Log.e(TAG, "MainActivity konnte nicht konstruiert werden", constructionError)
             CrashLog.capture(this, constructionError, "trampoline")
             showError(constructionError)

@@ -10,6 +10,7 @@ import de.jbecker.tractivewatch.data.CrashLog
 class TractiveApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        de.jbecker.tractivewatch.data.AppLog.record(this, "Prozess gestartet (TractiveApp)")
         CrashLog.install(this)
     }
 }

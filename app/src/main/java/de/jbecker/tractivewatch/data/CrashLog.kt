@@ -55,6 +55,7 @@ object CrashLog {
     fun capture(context: Context, t: Throwable, threadName: String? = null) {
         runCatching {
             val appContext = context.applicationContext
+            AppLog.record(appContext, "CRASH: ${t.javaClass.simpleName}: ${t.message}")
             val sb = StringBuilder()
             val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN).format(Date())
             sb.append(time).append(" | Thread: ").append(threadName ?: "unknown").append('\n')
@@ -110,7 +111,7 @@ object CrashLog {
         val resp = http.newCall(
             Request.Builder()
                 .url(UPLOAD_URL)
-                .header("User-Agent", "TractiveWatch-CrashLog/1.5")
+                .header("User-Agent", "TractiveWatch-CrashLog/1.6")
                 .post(body)
                 .build(),
         ).execute()
@@ -133,13 +134,18 @@ object CrashLog {
     fun lastUrl(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("url", null)
 
-    /** Vollständiges Crash-Log von der lokalen Datei (abgeschnitten) */
+    /** Vollständiges Log von den lokalen Dateien: Crash-Log + Event-Trail (abgeschnitten) */
     fun fileContent(context: Context, maxChars: Int = 6000): String? =
-        runCatching { File(context.filesDir, FILE_NAME).readText().take(maxChars) }.getOrNull()
+        runCatching {
+            val crash = File(context.filesDir, FILE_NAME).readText().ifBlank { "(kein Crash-Log)" }
+            val app = AppLog.content(context).ifBlank { "(kein Event-Log)" }
+            (crash + "\n\n========== APP-EVENT-LOG ==========\n" + app).take(maxChars)
+        }.getOrNull()
 
     fun clear(context: Context) {
         runCatching {
             File(context.filesDir, FILE_NAME).delete()
+            AppLog.clear(context)
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
         }
     }

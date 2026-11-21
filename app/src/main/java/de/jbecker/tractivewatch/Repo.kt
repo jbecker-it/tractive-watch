@@ -16,18 +16,37 @@ import kotlinx.coroutines.launch
 
 class Repo(context: Context) {
 
+    private val appContext = context.applicationContext
     val client = TractiveClient(context)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var channelJob: Job? = null
 
     suspend fun doLogin(email: String, password: String) {
-        client.login(email.trim(), password)
-        loadPets()
+        de.jbecker.tractivewatch.data.AppLog.record(appContext, "Login E-Mail: gestartet (${email.length > 0} E-Mail)")
+        val r = runCatching {
+            client.login(email.trim(), password)
+            loadPets()
+        }
+        de.jbecker.tractivewatch.data.AppLog.record(
+            appContext,
+            if (r.isSuccess) "Login E-Mail: ERFOLGREICH"
+            else "Login E-Mail: FEHLGESCHLAGEN ${r.exceptionOrNull()!!.javaClass.simpleName}: ${r.exceptionOrNull()!!.message}"
+        )
+        r.getOrThrow()
     }
 
     suspend fun doLoginGoogle(authCode: String) {
-        client.loginGoogle(authCode)
-        loadPets()
+        de.jbecker.tractivewatch.data.AppLog.record(appContext, "Login Google: Auth-Code an Tractive-API senden")
+        val r = runCatching {
+            client.loginGoogle(authCode)
+            loadPets()
+        }
+        de.jbecker.tractivewatch.data.AppLog.record(
+            appContext,
+            if (r.isSuccess) "Login Google: ERFOLGREICH (Haustiere geladen)"
+            else "Login Google: FEHLGESCHLAGEN ${r.exceptionOrNull()!!.javaClass.simpleName}: ${r.exceptionOrNull()!!.message}"
+        )
+        r.getOrThrow()
     }
 
     suspend fun loadPets() {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.CrashLog
 import de.jbecker.tractivewatch.data.GoogleLoginState
 import de.jbecker.tractivewatch.ui.CrashScreen
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        AppLog.record(this, "MainActivity.onCreate (v${BuildConfig.VERSION_NAME})")
         Log.i(TAG, "onCreate (Prozess-Start)")
         setContent {
             TractiveWatchTheme {
@@ -81,10 +83,16 @@ class MainActivity : ComponentActivity() {
     fun startGoogleLogin(onResult: (String?, String?) -> Unit) {
         googleCallback = onResult
         googleState.markPending()
+        AppLog.record(this, "Google-Login gestartet (Server-Auth-Code-Flow)")
         Log.i(TAG, "startGoogleLogin – Sign-In-Intent wird gestartet")
         runCatching {
-            startActivity(googleSignInClient.signInIntent)
+            // WICHTIG: startActivityForResult (nicht startActivity!) — sonst kommt
+            // das Google-Ergebnis nie in onActivityResult zurück und der
+            // Login-Button hängt in „läuft…" (Bug v1.1–v1.5).
+            startActivityForResult(googleSignInClient.signInIntent, RC_GOOGLE_SIGN_IN)
+            AppLog.record(this, "Google-Login: Sign-In-Intent gestartet")
         }.onFailure { e ->
+            AppLog.record(this, "Google-Login: Intent-Fehler ${e.javaClass.simpleName}: ${e.message}")
             Log.e(TAG, "startActivity fehlgeschlagen", e)
             googleState.clear()
             val cb = googleCallback
@@ -96,6 +104,7 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != RC_GOOGLE_SIGN_IN) return
+        AppLog.record(this, "onActivityResult: result=$resultCode data=${if (data == null) "null" else "vorhanden"}")
         Log.i(TAG, "onActivityResult: resultCode=$resultCode, data=${if (data == null) "null" else "vorhanden"}")
         val cb = googleCallback
         if (cb == null) {
@@ -130,11 +139,17 @@ class MainActivity : ComponentActivity() {
         task.addOnSuccessListener { account ->
             val code = account.serverAuthCode
             Log.i(TAG, "Auth-Code: ${if (code.isNullOrBlank()) "LEER" else code.take(8) + "… (Länge ${code.length})"}")
-            if (code.isNullOrBlank()) cb(null, "Kein Auth-Code von Google erhalten")
-            else cb(code, null)
+            if (code.isNullOrBlank()) {
+                AppLog.record(this, "Google-Login: FERTIG aber KEIN Auth-Code (Client-ID nicht für diese App freigeschaltet?)")
+                cb(null, "Kein Auth-Code von Google erhalten")
+            } else {
+                AppLog.record(this, "Google-Login: Auth-Code erhalten (${code.length} Zeichen) -> Tractive-API")
+                cb(code, null)
+            }
         }
         task.addOnFailureListener { e ->
             val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
+            AppLog.record(this, "Google-Login: FEHLGESCHLAGEN ApiException code=${code ?: "?"} (${e.javaClass.simpleName}: ${e.message})")
             Log.e(TAG, "Google-Sign-In fehlgeschlagen: code=$code, message=${e.message}", e)
             cb(null, "Google-Anmeldung fehlgeschlagen (Fehler ${code ?: "?"})")
         }
