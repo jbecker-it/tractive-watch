@@ -14,7 +14,9 @@ import androidx.compose.runtime.setValue
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import de.jbecker.tractivewatch.data.CrashLog
 import de.jbecker.tractivewatch.data.GoogleLoginState
+import de.jbecker.tractivewatch.ui.CrashScreen
 import de.jbecker.tractivewatch.ui.HomeScreen
 import de.jbecker.tractivewatch.ui.LoginScreen
 import de.jbecker.tractivewatch.ui.MapScreen
@@ -35,17 +37,37 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         Log.i(TAG, "onCreate (Prozess-Start)")
         setContent {
             TractiveWatchTheme {
-                val repo = remember { Repo(applicationContext) }
-                val late = MainActivity.takeLateResult()
-                Root(
-                    repo = repo,
-                    googleState = googleState,
-                    lateResult = late,
-                    onGoogleLogin = { callback -> startGoogleLogin(callback) },
-                )
+                val appContext = applicationContext
+                var showCrash by remember { mutableStateOf(false) }
+                val lastCrash = remember(showCrash) { CrashLog.lastSummary(appContext) }
+                val repo = remember { Repo(appContext) }
+                if (showCrash) {
+                    CrashScreen(
+                        detail = CrashLog.fileContent(appContext)
+                            ?: "Kein lokales Crash-Log vorhanden." +
+                                (CrashLog.lastUrl(appContext)?.let { "\n\nLog-URL: $it" } ?: ""),
+                        onDismiss = { showCrash = false },
+                        onReset = {
+                            CrashLog.clear(appContext)
+                            googleState.clear()
+                            showCrash = false
+                        },
+                    )
+                } else {
+                    val late = MainActivity.takeLateResult()
+                    Root(
+                        repo = repo,
+                        googleState = googleState,
+                        lateResult = late,
+                        lastCrash = lastCrash,
+                        onShowCrash = { showCrash = true },
+                        onGoogleLogin = { callback -> startGoogleLogin(callback) },
+                    )
+                }
             }
         }
     }
@@ -147,6 +169,8 @@ fun Root(
     repo: Repo,
     googleState: GoogleLoginState,
     lateResult: Pair<String?, String?>?,
+    lastCrash: String?,
+    onShowCrash: () -> Unit,
     onGoogleLogin: (callback: (String?, String?) -> Unit) -> Unit,
 ) {
     var screen by remember { mutableStateOf(Screen.Login) }
@@ -164,6 +188,8 @@ fun Root(
             repo = repo,
             googleState = googleState,
             lateResult = lateResult,
+            lastCrash = lastCrash,
+            onShowCrash = onShowCrash,
             onLoggedIn = { screen = Screen.Home },
             onGoogleLogin = onGoogleLogin,
         )

@@ -1,5 +1,7 @@
 package de.jbecker.tractivewatch.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -22,11 +24,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.jbecker.tractivewatch.Repo
+import de.jbecker.tractivewatch.data.CrashLog
 import de.jbecker.tractivewatch.data.GoogleLoginState
 import de.jbecker.tractivewatch.friendlyMessage
 import kotlinx.coroutines.launch
@@ -36,9 +40,12 @@ fun LoginScreen(
     repo: Repo,
     googleState: GoogleLoginState,
     lateResult: Pair<String?, String?>?,
+    lastCrash: String?,
+    onShowCrash: () -> Unit,
     onLoggedIn: () -> Unit,
     onGoogleLogin: (callback: (String?, String?) -> Unit) -> Unit,
 ) {
+    val context = LocalContext.current
     // Initial-Zustand: Pending aus Persistenz (Prozess-Neustart während des Sign-Ins)
     var pending by remember {
         mutableStateOf(googleState.pending && !googleState.isStale)
@@ -87,6 +94,31 @@ fun LoginScreen(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(12.dp))
+
+            if (lastCrash != null) {
+                Text(
+                    "Letzter Absturz: $lastCrash",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val crashUrl = CrashLog.lastUrl(context)
+                if (crashUrl != null) {
+                    TextButton(onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(crashUrl))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }) {
+                        Text("Crash-Log im Browser öffnen")
+                    }
+                }
+                TextButton(onClick = onShowCrash) {
+                    Text("Details anzeigen")
+                }
+            }
 
             if (pending) {
                 Text(
