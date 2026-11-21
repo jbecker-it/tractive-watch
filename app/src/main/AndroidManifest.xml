@@ -24,7 +24,8 @@
         <activity
             android:name=".CrashInfoActivity"
             android:exported="true"
-            android:label="Crash-Info">
+            android:label="Crash-Info"
+            android:theme="@style/Theme.TractiveWatch.Wear">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

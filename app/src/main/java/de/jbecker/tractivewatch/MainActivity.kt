@@ -122,7 +122,8 @@ class MainActivity : ComponentActivity() {
                 }
                 task.addOnFailureListener { ex ->
                     val code = (ex as? com.google.android.gms.common.api.ApiException)?.statusCode
-                    lateResult = null to "Google-Anmeldung fehlgeschlagen (Fehler ${code ?: "?"})"
+                    AppLog.record(this, "Google-Login: FEHLGESCHLAGEN (spätes Ergebnis) code=${code ?: "?"} ${ex.message}")
+                    lateResult = null to describeGoogleError(code)
                     Log.e(TAG, "Sign-In nach Neustart fehlgeschlagen", ex)
                 }
             }
@@ -151,8 +152,19 @@ class MainActivity : ComponentActivity() {
             val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
             AppLog.record(this, "Google-Login: FEHLGESCHLAGEN ApiException code=${code ?: "?"} (${e.javaClass.simpleName}: ${e.message})")
             Log.e(TAG, "Google-Sign-In fehlgeschlagen: code=$code, message=${e.message}", e)
-            cb(null, "Google-Anmeldung fehlgeschlagen (Fehler ${code ?: "?"})")
+            cb(null, describeGoogleError(code))
         }
+    }
+
+    /** Google-Fehlercode → kurze, auf die runde Watch passende deutsche Beschreibung */
+    private fun describeGoogleError(code: Int?): String = when (code) {
+        10 -> "Fehler 10: Google lehnt diese App für den Tractive-Login ab (App-Konfiguration). → Bitte 'Mit E-Mail & Passwort' verwenden"
+        7 -> "Fehler 7: Netzwerk — WLAN/LTE prüfen und erneut versuchen"
+        4 -> "Fehler 4: Kein Google-Konto angemeldet"
+        5 -> "Fehler 5: Ungültiges Google-Konto"
+        8 -> "Fehler 8: Interner Google-Fehler — erneut versuchen"
+        16, 1012 -> "Anmeldung abgebrochen"
+        else -> "Fehler ${code ?: "unbekannt"}: Google-Anmeldung fehlgeschlagen"
     }
 
     companion object {

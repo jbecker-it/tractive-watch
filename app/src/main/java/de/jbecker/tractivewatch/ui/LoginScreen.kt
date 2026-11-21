@@ -185,8 +185,8 @@ fun LoginScreen(
                 Text(
                     err,
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 6,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 8,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
