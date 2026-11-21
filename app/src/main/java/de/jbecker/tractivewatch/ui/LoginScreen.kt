@@ -35,6 +35,15 @@ import de.jbecker.tractivewatch.data.GoogleLoginState
 import de.jbecker.tractivewatch.friendlyMessage
 import kotlinx.coroutines.launch
 
+/**
+ * Login (v1.8: 100% Wear-nativ, E-Mail/Passwort als HAUPTWEG).
+ *
+ * Der Google-Button ist entfernt: Google blockiert die Nutzung der
+ * Tractive-Client-ID in dieser App (ApiException 10 = DEVELOPER_ERROR,
+ * endgültige Google-Antwort). E-Mail/Passwort ist der funktionierende Weg.
+ * Der Google-Code-Pfad bleibt in MainActivity, falls Google/Tractive
+ * die Blockade irgendwann aufheben.
+ */
 @Composable
 fun LoginScreen(
     repo: Repo,
@@ -46,21 +55,15 @@ fun LoginScreen(
     onGoogleLogin: (callback: (String?, String?) -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
-    // Initial-Zustand: Pending aus Persistenz (Prozess-Neustart während des Sign-Ins)
-    var pending by remember {
-        mutableStateOf(googleState.pending && !googleState.isStale)
-    }
     var error by remember { mutableStateOf<String?>(null) }
-    var showEmailForm by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Spätes Ergebnis (kam nach Prozess-Neustart an) verarbeiten
+    // Spätes Google-Ergebnis (kam nach Prozess-Neustart an) verarbeiten
     LaunchedEffect(lateResult) {
         val late = lateResult ?: return@LaunchedEffect
-        pending = false
         val (code, err) = late
         if (code != null) {
             busy = true
@@ -73,27 +76,29 @@ fun LoginScreen(
                 busy = false
             }
         } else {
-            error = err ?: "Google-Anmeldung fehlgeschlagen"
+            error = err ?: "Anmeldung fehlgeschlagen"
         }
     }
 
+    // Material3-Scaffold behandelt auf Wear OS automatisch den
+    // kreisförmigen Cutout (circular insets) → 100% Watch-nativ
     Scaffold { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(horizontal = 14.dp, vertical = 22.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("Tractive Watch", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(1.dp))
             Text(
                 "Ihr Tractive-Konto",
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             if (lastCrash != null) {
                 Text(
@@ -104,6 +109,9 @@ fun LoginScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                TextButton(onClick = onShowCrash) {
+                    Text("Details anzeigen")
+                }
                 val crashUrl = CrashLog.lastUrl(context)
                 if (crashUrl != null) {
                     TextButton(onClick = {
@@ -112,133 +120,69 @@ fun LoginScreen(
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
                     }) {
-                        Text("Crash-Log im Browser öffnen")
+                        Text("Crash-Log öffnen")
                     }
                 }
-                TextButton(onClick = onShowCrash) {
-                    Text("Details anzeigen")
-                }
+                Spacer(Modifier.height(6.dp))
             }
 
-            if (pending) {
-                Text(
-                    "Google-Anmeldung läuft…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        pending = false
-                        googleState.clear()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Abbrechen")
-                }
-            } else {
-                // Hauptweg: Google-Login (wie in der offiziellen Tractive-App)
-                Button(
-                    onClick = {
-                        error = null
-                        pending = true
-                        onGoogleLogin { code, err ->
-                            pending = false
-                            if (code != null) {
-                                scope.launch {
-                                    busy = true
-                                    try {
-                                        repo.doLoginGoogle(code)
-                                        onLoggedIn()
-                                    } catch (e: Exception) {
-                                        error = e.friendlyMessage()
-                                    } finally {
-                                        busy = false
-                                    }
-                                }
-                            } else {
-                                error = err ?: "Google-Anmeldung fehlgeschlagen"
-                            }
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("E-Mail") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Passwort") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                visualTransformation = PasswordVisualTransformation('•'),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    error = null
+                    scope.launch {
+                        busy = true
+                        try {
+                            repo.doLogin(email, password)
+                            onLoggedIn()
+                        } catch (e: Exception) {
+                            error = e.friendlyMessage()
+                        } finally {
+                            busy = false
                         }
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Mit Google anmelden")
-                }
-
-                TextButton(
-                    onClick = {
-                        showEmailForm = !showEmailForm
-                        error = null
-                    },
-                    enabled = !busy,
-                ) {
-                    Text(if (showEmailForm) "E-Mail ausblenden" else "Mit E-Mail & Passwort")
-                }
+                    }
+                },
+                enabled = !busy && email.isNotBlank() && password.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (busy) "Anmelden…" else "Anmelden")
             }
+            Spacer(Modifier.height(5.dp))
+            Text(
+                "Passwort wird nur lokal verschlüsselt gespeichert",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             val err = error
             if (err != null) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     err,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelSmall,
-                    maxLines = 8,
+                    maxLines = 6,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            if (showEmailForm && !pending) {
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("E-Mail") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Passwort") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation('•'),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        error = null
-                        scope.launch {
-                            busy = true
-                            try {
-                                repo.doLogin(email, password)
-                                onLoggedIn()
-                            } catch (e: Exception) {
-                                error = e.friendlyMessage()
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    },
-                    enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (busy) "Anmelden…" else "Anmelden")
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Passwort wird nur lokal verschlüsselt gespeichert",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
                 )
             }
         }
