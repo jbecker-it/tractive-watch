@@ -1,6 +1,7 @@
 package de.jbecker.tractivewatch.data
 
 import android.content.Context
+import android.util.Log
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.CancellationException
@@ -114,6 +115,7 @@ class TractiveClient(context: Context) {
 
     /** Google-Login: Auth-Code aus Google Sign-In gegen Tractive-Token tauschen */
     suspend fun loginGoogle(authCode: String) {
+        Log.i("TractiveWatch", "loginGoogle: Auth-Code wird an Tractive gesendet (Länge ${authCode.length})")
         val body = moshi.adapter(GoogleLoginRequest::class.java)
             .toJson(GoogleLoginRequest(authCode))
             .toRequestBody(jsonMedia)
@@ -126,6 +128,7 @@ class TractiveClient(context: Context) {
         )
         resp.use { r ->
             val text = r.body?.string().orEmpty()
+            Log.i("TractiveWatch", "loginGoogle: HTTP ${r.code} von Tractive: ${text.take(200)}")
             if (!r.isSuccessful) throw TractiveApiError(r.code, cleanMessage(text))
             val tok = moshi.adapter(AuthToken::class.java).fromJson(text)
                 ?: throw TractiveApiError(r.code, "Unerwartete Antwort")
