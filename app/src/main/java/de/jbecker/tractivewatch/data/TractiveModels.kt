@@ -19,6 +19,12 @@ data class LoginRequest(
     @Json(name = "grant_type") val grantType: String = "tractive",
 )
 
+data class GoogleLoginRequest(
+    @Json(name = "auth_code") val authCode: String,
+    @Json(name = "locale") val locale: String = "de_de",
+    @Json(name = "all_terms_accepted") val allTermsAccepted: Boolean = true,
+)
+
 data class TrackableObjectSummary(
     @Json(name = "_id") val id: String? = null,
 )

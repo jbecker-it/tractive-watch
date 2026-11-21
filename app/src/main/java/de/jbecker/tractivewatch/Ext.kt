@@ -1,6 +1,7 @@
 package de.jbecker.tractivewatch
 
 import de.jbecker.tractivewatch.data.NoCredentialsError
+import de.jbecker.tractivewatch.data.ReauthRequiredError
 import de.jbecker.tractivewatch.data.TractiveApiError
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -15,6 +16,7 @@ fun Throwable.friendlyMessage(): String = when (this) {
         else -> "Tractive-Fehler $code: $apiMessage"
     }
     is NoCredentialsError -> "Bitte zuerst anmelden"
+    is ReauthRequiredError -> "Anmeldung abgelaufen – bitte ab- und erneut anmelden"
     is UnknownHostException, is SocketTimeoutException -> "Keine Netzverbindung"
     is SSLException -> "SSL-Fehler"
     is IOException -> "Netzwerkfehler"

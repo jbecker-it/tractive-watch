@@ -29,9 +29,18 @@ Damit steuern und überwachen Sie Ihren Tractive-Tracker direkt vom Handgelenk: 
    adb install app-debug.apk
    ```
    …oder die APK auf die Watch kopieren und dort installieren.
-4. App starten und mit den **Tractive-Zugangsdaten** (E-Mail + Passwort, wie im Tractive-Web/Android) anmelden.
+4. App starten und anmelden:
+   - **Mit Google** — funktioniert genau wie in der offiziellen Tractive-App (Ihr Google-Konto, mit dem Sie sich bei Tractive anmelden).
+   - **Mit E-Mail & Passwort** — alternative Anmeldung (Passwort wird nur lokal verschlüsselt gespeichert).
 
 > Hinweis: Es ist eine Debug-Signatur. Bei Updates über ältere Builds ggf. zuerst die alte Version deinstallieren.
+
+## Ablauf
+
+1. Start → **Mit Google anmelden** (oder E-Mail/Passwort-Formular öffnen)
+2. Home: Tracker-Liste mit Akku, Signal, letzter Position
+3. Tap auf einen Tracker → Karte mit Live-Position (OSM-Tiles)
+4. Zurück → Buttons: **LED an/aus**, **Piepton**, **Live-Tracking**
 
 ## Selbst bauen
 
@@ -56,12 +65,15 @@ app/src/main/java/de/jbecker/tractivewatch/
 
 Die App nutzt die **Web-Backend-API** von Tractive (wie in Community-Projekten dokumentiert), da es keine offizielle öffentliche API gibt:
 
-- Auth: `POST https://graph.tractive.com/4/auth/token`
+- Auth (Google, wie in der offiziellen App): Google-Auth-Code aus dem Play-Services-Sign-In → `POST https://graph.tractive.com/4/auth/token/google`
+- Auth (E-Mail/Passwort): `POST https://graph.tractive.com/4/auth/token`
 - Befehle: `POST /4/tracker/{id}/command/{led_control|buzzer_control|live_tracking}`
 - Echtzeit: NDJSON-Longpoll auf `https://channel.tractive.com/3/channel`
 - Karte: `https://tile.openstreetmap.org/{z}/{x}/{y}.png` (OpenStreetMap-Kacheln)
 
-Stack: **Kotlin, Jetpack Compose (Material3), OkHttp, Moshi** — ohne offizielles Tractive-SDK, ohne APK-Repackaging.
+Stack: **Kotlin, Jetpack Compose (Material3), OkHttp, Moshi, Play-Services-Auth** — ohne offizielles Tractive-SDK, ohne APK-Repackaging.
+
+> **Google-Login-Hinweis:** Die App verwendet die bei Google registrierte Client-ID der offiziellen Tractive-Web-App. Das funktioniert, solange Tractive diese Client-ID beibehält; Google kann zudem Drittanbieter-Anwendungen mit dieser Client-ID blockieren (OAuth-2.0-Policy). In dem Fall bleibt die E-Mail/Passwort-Anmeldung als Ausweg.
 
 ## Hinweise & Haftung
 

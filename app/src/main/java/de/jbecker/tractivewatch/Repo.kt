@@ -25,6 +25,11 @@ class Repo(context: Context) {
         loadPets()
     }
 
+    suspend fun doLoginGoogle(authCode: String) {
+        client.loginGoogle(authCode)
+        loadPets()
+    }
+
     suspend fun loadPets() {
         TrackerUi.loading.value = true
         runCatching {

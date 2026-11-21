@@ -22,6 +22,10 @@ class CredentialsStore(context: Context) {
         context.getSharedPreferences("tractive_secure_prefs", Context.MODE_PRIVATE)
     }
 
+    /** "email" oder "google" – welcher Login-Provider zuletzt genutzt wurde */
+    val provider: String?
+        get() = prefs.getString("provider", null)
+
     val email: String?
         get() = prefs.getString("email", null)
 
@@ -32,6 +36,28 @@ class CredentialsStore(context: Context) {
         prefs.edit()
             .putString("email", email)
             .putString("password", password)
+            .putString("provider", "email")
+            .apply()
+    }
+
+    fun markGoogle() {
+        prefs.edit().putString("provider", "google").apply()
+    }
+
+    val userId: String?
+        get() = prefs.getString("user_id", null)
+
+    val accessToken: String?
+        get() = prefs.getString("access_token", null)
+
+    val tokenExpiresAt: Long?
+        get() = prefs.getLong("token_expires_at", 0L).takeIf { it > 0L }
+
+    fun setSession(userId: String?, token: String, expiresAt: Long) {
+        prefs.edit()
+            .putString("user_id", userId)
+            .putString("access_token", token)
+            .putLong("token_expires_at", expiresAt)
             .apply()
     }
 

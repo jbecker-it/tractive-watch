@@ -31,6 +31,8 @@ class TractiveApiError(val code: Int, val apiMessage: String) :
 
 class NoCredentialsError : Exception("Keine Zugangsdaten gespeichert")
 
+class ReauthRequiredError : Exception("Anmeldung abgelaufen – bitte erneut anmelden")
+
 class TractiveClient(context: Context) {
 
     private val store = CredentialsStore(context)
@@ -55,6 +57,20 @@ class TractiveClient(context: Context) {
         "accept" to "application/json, text/plain, */*",
     )
 
+    init {
+        // Gespeicherte Session wiederherstellen (übersteht App-Neustart)
+        val storedToken = store.accessToken
+        val storedUser = store.userId
+        val storedExp = store.tokenExpiresAt ?: 0L
+        if (storedToken != null && storedUser != null &&
+            System.currentTimeMillis() < storedExp - 120_000L
+        ) {
+            userId = storedUser
+            accessToken = storedToken
+            tokenExpiresAt = storedExp
+        }
+    }
+
     private fun hdrs(extra: Map<String, String> = emptyMap()): Headers {
         val b = Headers.Builder()
         (baseHeaders + extra).forEach { (k, v) -> b.add(k, v) }
@@ -62,7 +78,12 @@ class TractiveClient(context: Context) {
     }
 
     val hasStoredCredentials: Boolean
-        get() = !store.email.isNullOrBlank()
+        get() = store.provider != null
+
+    /** true, wenn der Google-Login abgelaufen ist und neu gestartet werden muss */
+    val needsReauth: Boolean
+        get() = store.provider == "google" &&
+            (accessToken == null || System.currentTimeMillis() >= tokenExpiresAt - 120_000L)
 
     // ---------- Auth ----------
 
@@ -85,10 +106,41 @@ class TractiveClient(context: Context) {
             if (tok.accessToken.isNullOrBlank()) throw TractiveApiError(r.code, "Kein Token erhalten")
             userId = tok.userId
             accessToken = tok.accessToken
-            tokenExpiresAt = (tok.expiresAt ?: 0L) * 1000L
+            tokenExpiresAt = expiresAtMillis(tok)
             store.save(email, password)
+            store.setSession(userId, tok.accessToken, tokenExpiresAt)
         }
     }
+
+    /** Google-Login: Auth-Code aus Google Sign-In gegen Tractive-Token tauschen */
+    suspend fun loginGoogle(authCode: String) {
+        val body = moshi.adapter(GoogleLoginRequest::class.java)
+            .toJson(GoogleLoginRequest(authCode))
+            .toRequestBody(jsonMedia)
+        val resp = execute(
+            Request.Builder()
+                .url(baseUrl + "auth/token/google")
+                .headers(hdrs(mapOf("x-tractive-app" to "site.tractivegps")))
+                .post(body)
+                .build()
+        )
+        resp.use { r ->
+            val text = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw TractiveApiError(r.code, cleanMessage(text))
+            val tok = moshi.adapter(AuthToken::class.java).fromJson(text)
+                ?: throw TractiveApiError(r.code, "Unerwartete Antwort")
+            if (tok.accessToken.isNullOrBlank()) throw TractiveApiError(r.code, "Kein Token erhalten")
+            userId = tok.userId
+            accessToken = tok.accessToken
+            tokenExpiresAt = expiresAtMillis(tok)
+            store.markGoogle()
+            store.setSession(userId, tok.accessToken, tokenExpiresAt)
+        }
+    }
+
+    private fun expiresAtMillis(tok: AuthToken): Long =
+        if (tok.expiresAt != null) tok.expiresAt * 1000L
+        else System.currentTimeMillis() + 24 * 3_600_000L
 
     suspend fun ensureAuth() {
         authMutex.withLock {
@@ -99,8 +151,14 @@ class TractiveClient(context: Context) {
             }
             val email = store.email
             val password = store.password
-            if (email.isNullOrBlank() || password.isNullOrBlank()) throw NoCredentialsError()
-            login(email, password)
+            if (store.provider == "email" && !email.isNullOrBlank() && !password.isNullOrBlank()) {
+                login(email, password)
+            } else {
+                userId = null
+                accessToken = null
+                tokenExpiresAt = 0L
+                throw ReauthRequiredError()
+            }
         }
     }
 
