@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +42,9 @@ class TractiveClient(context: Context) {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
-    private val moshi = Moshi.Builder().build()
+    // EXPLIZITER Kotlin-Adapter: ohne ihn kann Moshi unsere Data-Classes
+    // nicht serialisieren ("Cannot serialize Kotlin type ..." — Login-Bug v1.9)
+    private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val authMutex = Mutex()
 
     @Volatile private var userId: String? = null
@@ -89,6 +92,7 @@ class TractiveClient(context: Context) {
     // ---------- Auth ----------
 
     suspend fun login(email: String, password: String) {
+        Log.i("TractiveWatch", "login: POST /4/auth/token (E-Mail-Länge ${email.length}, Passwort-Länge ${password.length})")
         val body = moshi.adapter(LoginRequest::class.java)
             .toJson(LoginRequest(email, password))
             .toRequestBody(jsonMedia)
@@ -101,6 +105,7 @@ class TractiveClient(context: Context) {
         )
         resp.use { r ->
             val text = r.body?.string().orEmpty()
+            Log.i("TractiveWatch", "login: HTTP ${r.code} von Tractive: ${text.take(200)}")
             if (!r.isSuccessful) throw TractiveApiError(r.code, cleanMessage(text))
             val tok = moshi.adapter(AuthToken::class.java).fromJson(text)
                 ?: throw TractiveApiError(r.code, "Unerwartete Antwort")

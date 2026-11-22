@@ -12,8 +12,8 @@ android {
         applicationId = "de.jbecker.tractivewatch"
         minSdk = 30
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.9"
+        versionCode = 11
+        versionName = "1.10"
     }
 
     buildTypes {
@@ -43,7 +43,11 @@ dependencies {
     implementation("androidx.compose.animation:animation:1.7.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.moshi:moshi:1.15.2")
+    // Kotlin-Adapter für Moshi (Reflexion) — OHNE diesen wirft toJson()
+    // 'Cannot serialize Kotlin type ...' für unsere Data-Classes (Login-Fehler v1.9)
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    testImplementation("junit:junit:4.13.2")
 }

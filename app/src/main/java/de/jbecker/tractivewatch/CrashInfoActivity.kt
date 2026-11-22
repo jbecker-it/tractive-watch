@@ -186,7 +186,7 @@ class CrashInfoActivity : ComponentActivity() {
         })
         root.addView(button("Log neu hochladen") {
             val newUrl = CrashLog.reupload(this)
-                ?: throw IllegalStateException("0x0.st nicht erreichbar")
+                ?: throw IllegalStateException("Upload fehlgeschlagen (tmpfiles.org und paste.rs nicht erreichbar)")
             clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
             buildUi(newUrl)
         })

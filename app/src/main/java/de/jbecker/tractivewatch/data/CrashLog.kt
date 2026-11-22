@@ -8,14 +8,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Speichert Abstürze in crash.log und lädt das Log synchron zu 0x0.st hoch
- * (hält ~1 Jahr, keine Anmeldung nötig). Die URL erscheint im Crash-Info-Screen –
+ * Speichert Abstürze in crash.log und lädt das Log synchron hoch (tmpfiles.org,
+ * Fallback paste.rs — beide ohne Anmeldung, halten ~60-90 Tage). Die URL erscheint im Crash-Info-Screen –
  * damit ist ein Watch-Crash auch ohne PC diagnostizierbar.
  *
  * Alle Funktionen werfen niemals eine Exception (runCatching intern),
@@ -25,7 +26,6 @@ object CrashLog {
 
     private const val FILE_NAME = "crash.log"
     private const val PREFS = "crash_state"
-    private const val UPLOAD_URL = "https://0x0.st/"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -99,25 +99,57 @@ object CrashLog {
         url
     }.getOrNull()
 
-    private fun upload(prefs: SharedPreferences, content: String): String? = runCatching {
+    /**
+     * Upload + URL merken. 0x0.st hat Uploads dauerhaft deaktiviert (Nov 2026,
+     * "AI botnet spam"), daher Fallback-Kette:
+     * 1) tmpfiles.org (Multipart, ~60 Tage)
+     * 2) paste.rs (Text, ~90 Tage)
+     */
+    private fun upload(prefs: SharedPreferences, content: String): String? {
+        val url = tmpfilesUpload(content) ?: pasteRsUpload(content)
+        if (url != null) prefs.edit().putString("url", url).apply()
+        return url
+    }
+
+    /** tmpfiles.org: Antwort {"status":"success","data":{"url":"https://tmpfiles.org/xxx/file"}}. */
+    private fun tmpfilesUpload(content: String): String? = runCatching {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart(
                 "file",
-                "tractive-watch-crash.log",
+                "tractive-watch-log.txt",
                 content.toRequestBody("text/plain".toMediaType()),
             )
             .build()
         val resp = http.newCall(
             Request.Builder()
-                .url(UPLOAD_URL)
-                .header("User-Agent", "TractiveWatch-CrashLog/1.9")
+                .url("https://tmpfiles.org/api/v1/upload")
+                .header("User-Agent", "TractiveWatch-CrashLog/1.10")
                 .post(body)
                 .build(),
         ).execute()
         resp.use { r ->
+            val text = r.body?.string().orEmpty()
+            val m = Regex("\"url\"\\s*:\\s*\"(https://tmpfiles\\.org/[^\"]+)\"").find(text)
+                ?: throw IOException("tmpfiles.org: unerwartete Antwort: ${text.take(120)}")
+            // Seiten-Link in Direkt-Download-Link umwandeln
+            m.groupValues[1].replaceFirst("tmpfiles.org/", "tmpfiles.org/dl/")
+        }
+    }.getOrNull()
+
+    /** paste.rs: Antwort IST die URL als Klartext. */
+    private fun pasteRsUpload(content: String): String? = runCatching {
+        val resp = http.newCall(
+            Request.Builder()
+                .url("https://paste.rs/")
+                .header("User-Agent", "TractiveWatch-CrashLog/1.10")
+                .header("Content-Type", "text/plain")
+                .post(content.toRequestBody("text/plain".toMediaType()))
+                .build(),
+        ).execute()
+        resp.use { r ->
             val url = r.body?.string().orEmpty().trim()
-            if (url.startsWith("http")) url else null
+            if (url.startsWith("http")) url else throw IOException("paste.rs: unerwartete Antwort: ${url.take(120)}")
         }
     }.getOrNull()
 
@@ -130,7 +162,7 @@ object CrashLog {
         return "$dt – $summary"
     }
 
-    /** Hochgeladene Crash-Log-URL (0x0.st), null wenn keine */
+    /** Hochgeladene Log-URL (tmpfiles.org oder paste.rs), null wenn keine */
     fun lastUrl(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("url", null)
 
