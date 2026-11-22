@@ -3,7 +3,9 @@ package de.jbecker.tractivewatch
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -17,16 +19,20 @@ import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.CrashLog
 
 /**
- * Crash-Info (Launcher-Icon): zeigt Version, letzten Crash, die Log-URL
- * (lesbar auf dem Display!), das volle Log UND den Event-Trail — damit ist
- * auch ohne adb logcat sichtbar, an welcher Stelle etwas hängen bleibt.
+ * Crash-Info (Launcher-Icon): Version, letzter Crash, Log-URL (lesbar!),
+ * volles Log + Event-Trail — ohne adb logcat diagnostizierbar.
  *
- * v1.7: kompakt + Log-URL prominent oben (damit sie auf der Uhr abgelesen
- * und an den Entwickler geschickt werden kann) + nach "neu hochladen"
- * wird die neue URL direkt im Screen angezeigt.
- * Wear-Theme (DeviceDefault → rundes Vollbild auf Wear OS) im Manifest.
+ * v1.9 (nach Wear-OS-Guidelines):
+ * - Buttons mit EXPLIZITEN Farben (blau, weißer Text, 48dp Touch-Target):
+ *   unter dem nativen Wear-Theme (DeviceDefault) wurden Plain-Buttons als
+ *   weiße Balken mit unsichtbarem Text gerendert.
+ * - Status-Zeile im Screen (Toast ist auf Wear unzuverlässig).
+ * - Text 10.5sp (Wear-Minimum 10sp für Nebentext, 12sp für Kern-Text).
+ * - Buttons 48dp hoch (Wear-Minimum für Touch-Targets).
  */
 class CrashInfoActivity : ComponentActivity() {
+
+    private var statusView: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,14 +40,14 @@ class CrashInfoActivity : ComponentActivity() {
             buildUi(null)
             AppLog.record(this, "Crash-Info: Screen angezeigt")
         } catch (t: Throwable) {
-            // Letzter Ausweg: IMMER etwas Lesbares zeigen, egal was schiefgeht
             AppLog.record(this, "Crash-Info: buildUi FATAL ${t.javaClass.simpleName}: ${t.message}")
             runCatching {
                 val fallback = TextView(this).apply {
                     text = "Crash-Info konnte nicht geladen werden:\n\n" +
                         "${t.javaClass.name}: ${t.message}\n\n" +
                         "Voller Event-Trail:\n" + AppLog.content(this@CrashInfoActivity)
-                    textSize = 11f
+                    setTextColor(Color.WHITE)
+                    textSize = 10.5f
                     setTypeface(Typeface.MONOSPACE)
                     val pad = (32 * resources.displayMetrics.density).toInt()
                     setPadding(pad, pad, pad, pad)
@@ -57,111 +63,139 @@ class CrashInfoActivity : ComponentActivity() {
         }
     }
 
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
     private fun buildUi(urlOverride: String?) {
         val version = "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})"
         val summary = runCatching { CrashLog.lastSummary(this) }.getOrNull()
         val url = urlOverride ?: runCatching { CrashLog.lastUrl(this) }.getOrNull()
         val full = runCatching { CrashLog.fileContent(this, 9000) }.getOrNull()
-        val allText = buildString {
-            append("Tractive Watch ").append(version).append('\n')
-            if (summary != null) { appendLine(summary); appendLine() }
-            if (url != null) { appendLine("Log-URL: $url"); appendLine() }
-            if (full.isNullOrBlank()) {
-                appendLine("(noch keine Crash-/Event-Daten — App starten und Log-Schritt ausführen)")
-            } else {
-                append(full)
-            }
-        }
 
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val d = resources.displayMetrics.density
-        val pad = (16 * d).toInt()
-        val margin = (6 * d).toInt()
+        val lpParent = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
+            setPadding(dp(14), dp(10), dp(14), dp(8))
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = lpParent
+        }
+
+        fun addLine(text: String, size: Float, color: Int, mono: Boolean = false, top: Int = 0) {
+            root.addView(
+                TextView(this).apply {
+                    this.text = text
+                    textSize = size
+                    setTextColor(color)
+                    if (mono) setTypeface(Typeface.MONOSPACE)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(2), 0, dp(2), 0)
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = top },
             )
         }
 
-        root.addView(TextView(this).apply {
-            text = "Crash-Info — $version"
-            textSize = 12f
-            setTypeface(Typeface.DEFAULT_BOLD)
-        })
-
-        if (url != null) {
-            root.addView(TextView(this).apply {
-                text = "Log-URL: $url"
-                textSize = 10.5f
-                setTypeface(Typeface.MONOSPACE)
-                setPadding(0, (6 * d).toInt(), 0, (6 * d).toInt())
-            })
-        }
+        addLine("Crash-Info — $version", 12f, Color.WHITE)
+        if (summary != null) addLine(summary, 10.5f, 0xFFFF8A80.toInt(), top = dp(4))
+        if (url != null) addLine("Log-URL: $url", 10.5f, 0xFF8AB4F8.toInt(), mono = true, top = dp(4))
 
         val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            )
             isVerticalScrollBarEnabled = false
-        }
-        scroll.addView(TextView(this).apply {
-            text = allText
-            textSize = 9.5f
-            setTypeface(Typeface.MONOSPACE)
-            setLineSpacing(0f, 1.1f)
-        })
-        root.addView(scroll)
-
-        fun button(label: String, action: () -> Unit) = Button(this).apply {
-            text = label
-            textSize = 10f
-            isAllCaps = false
-            gravity = Gravity.CENTER
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+            addView(
+                TextView(this@CrashInfoActivity).apply {
+                    text = if (full.isNullOrBlank()) {
+                        "(noch keine Daten — App starten, dann hier nachschauen)"
+                    } else full
+                    setTextColor(Color.LTGRAY)
+                    textSize = 10.5f
+                    setTypeface(Typeface.MONOSPACE)
+                    setLineSpacing(0f, 1.05f)
+                    setPadding(dp(4), dp(6), dp(4), dp(6))
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
             )
-            lp.topMargin = margin
-            layoutParams = lp
+        }
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+                topMargin = dp(4)
+            },
+        )
+
+        statusView = TextView(this).apply {
+            text = ""
+            textSize = 10.5f
+            setTextColor(0xFF81C784.toInt())
+            gravity = Gravity.CENTER
+        }
+        root.addView(
+            statusView!!,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(4) },
+        )
+
+        fun button(label: String, action: () -> Unit): Button = Button(this).apply {
+            text = label
+            textSize = 12f
+            isAllCaps = false
+            includeFontPadding = false
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            val bg = GradientDrawable()
+            bg.cornerRadius = dp(24).toFloat()
+            bg.setColor(0xFF1A73E8.toInt())
+            background = bg
+            minimumHeight = dp(48)
+            setPadding(dp(12), 0, dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(6) }
             setOnClickListener {
-                runCatching(action).onFailure {
-                    Toast.makeText(this@CrashInfoActivity, "Fehler: ${it.message}", Toast.LENGTH_LONG).show()
+                runCatching { action() }.onFailure {
+                    runCatching {
+                        AppLog.record(
+                            this@CrashInfoActivity,
+                            "Crash-Info Button '$label' FEHLER: ${it.javaClass.simpleName}: ${it.message}",
+                        )
+                    }
+                    statusView?.text = "Fehler: ${it.message ?: it.javaClass.simpleName}"
+                    runCatching {
+                        Toast.makeText(this@CrashInfoActivity, "Fehler: ${it.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
 
-        root.addView(button("Alles kopieren") {
-            clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", allText))
-            Toast.makeText(this@CrashInfoActivity, "Kopiert — am Handy einfügen", Toast.LENGTH_SHORT).show()
+        root.addView(button("Log kopieren") {
+            val text = full ?: "(keine Daten)"
+            clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", text))
+            statusView?.text = "Kopiert — am Smartphone in die Chat-App einfügen"
+            runCatching { Toast.makeText(this, "Kopiert", Toast.LENGTH_SHORT).show() }
         })
         root.addView(button("Log neu hochladen") {
-            val newUrl = CrashLog.reupload(this@CrashInfoActivity)
-            if (newUrl != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
-                buildUi(newUrl) // Screen mit der NEUEN URL neu aufbauen
-                Toast.makeText(this@CrashInfoActivity, "Erledigt — URL oben + kopiert", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this@CrashInfoActivity, "Hochladen fehlgeschlagen (0x0.st)", Toast.LENGTH_LONG).show()
-            }
+            val newUrl = CrashLog.reupload(this)
+                ?: throw IllegalStateException("0x0.st nicht erreichbar")
+            clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
+            buildUi(newUrl)
         })
         root.addView(button("Zurücksetzen") {
-            CrashLog.clear(this@CrashInfoActivity)
+            CrashLog.clear(this)
             buildUi(null)
-            Toast.makeText(this@CrashInfoActivity, "Zurückgesetzt", Toast.LENGTH_SHORT).show()
+            statusView?.text = "Zurückgesetzt"
         })
 
-        setContentView(
-            root,
-            ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
+        setContentView(root, lpParent)
     }
 }

@@ -86,15 +86,15 @@ object CrashLog {
     }
 
     /**
-     * Lädt die aktuelle Log-Datei (erneut) hoch und speichert die neue URL.
-     * Gibt die URL zurück, null bei Fehlschlag oder fehlender Datei.
+     * Lädt das komplette Log (Crash-Log + Event-Trail) erneut hoch und speichert
+     * die neue URL. v1.9: funktioniert auch OHNE crash.log (Event-Trail reicht) —
+     * v1.8 konnte nur crash.log hochladen und scheiterte sonst still.
      */
     fun reupload(context: Context): String? = runCatching {
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val file = File(appContext.filesDir, FILE_NAME)
-        if (!file.exists()) return@runCatching null
-        val url = upload(prefs, file.readText())
+        val content = fileContent(appContext, 20_000) ?: return@runCatching null
+        val url = upload(prefs, content)
         if (url != null) prefs.edit().putString("url", url).apply()
         url
     }.getOrNull()
@@ -111,7 +111,7 @@ object CrashLog {
         val resp = http.newCall(
             Request.Builder()
                 .url(UPLOAD_URL)
-                .header("User-Agent", "TractiveWatch-CrashLog/1.6")
+                .header("User-Agent", "TractiveWatch-CrashLog/1.9")
                 .post(body)
                 .build(),
         ).execute()
@@ -134,12 +134,26 @@ object CrashLog {
     fun lastUrl(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("url", null)
 
-    /** Vollständiges Log von den lokalen Dateien: Crash-Log + Event-Trail (abgeschnitten) */
+    /**
+     * Vollständiges Log von den lokalen Dateien: Crash-Log + Event-Trail (abgeschnitten).
+     * v1.9 (Bugfix v1.8): Jede Datei wird EIGENSTÄNDIG gelesen — ein fehlender
+     * crash.log warf eine Exception und hat das (potenziell volle) Event-Log
+     * komplett unsichtbar gemacht.
+     */
     fun fileContent(context: Context, maxChars: Int = 6000): String? =
         runCatching {
-            val crash = File(context.filesDir, FILE_NAME).readText().ifBlank { "(kein Crash-Log)" }
-            val app = AppLog.content(context).ifBlank { "(kein Event-Log)" }
-            (crash + "\n\n========== APP-EVENT-LOG ==========\n" + app).take(maxChars)
+            val crash = runCatching { File(context.filesDir, FILE_NAME).readText() }
+                .getOrNull()?.takeIf { it.isNotBlank() }
+            val app = AppLog.content(context)
+            if (crash.isNullOrBlank() && app.isBlank()) return@runCatching null
+            val parts = mutableListOf<String>()
+            parts += crash ?: "(noch kein Crash aufgezeichnet — gut so)"
+            if (app.isNotBlank()) {
+                parts += "========== APP-EVENT-LOG ==========\n" + app
+            } else {
+                parts += "(KEIN Event-Log — das ist ein Fehler: die App-Start-Events fehlen!)"
+            }
+            parts.joinToString("\n\n").take(maxChars)
         }.getOrNull()
 
     fun clear(context: Context) {
