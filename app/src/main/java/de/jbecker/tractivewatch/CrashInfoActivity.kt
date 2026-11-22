@@ -81,6 +81,7 @@ class CrashInfoActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(8))
             gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(0xFF0A0F14.toInt())
             layoutParams = lpParent
         }
 
@@ -103,6 +104,8 @@ class CrashInfoActivity : ComponentActivity() {
 
         addLine("Crash-Info — $version", 12f, Color.WHITE)
         if (summary != null) addLine(summary, 10.5f, 0xFFFF8A80.toInt(), top = dp(4))
+        val uploadErr = runCatching { CrashLog.lastUploadError(this) }.getOrNull()
+        if (uploadErr != null) addLine("Upload-Fehler: $uploadErr", 10f, 0xFFFFB74D.toInt(), top = dp(2))
         if (url != null) addLine("Log-URL: $url", 10.5f, 0xFF8AB4F8.toInt(), mono = true, top = dp(4))
 
         val scroll = ScrollView(this).apply {
@@ -112,7 +115,7 @@ class CrashInfoActivity : ComponentActivity() {
                     text = if (full.isNullOrBlank()) {
                         "(noch keine Daten — App starten, dann hier nachschauen)"
                     } else full
-                    setTextColor(Color.LTGRAY)
+                    setTextColor(0xFFB9C7D2.toInt())
                     textSize = 10.5f
                     setTypeface(Typeface.MONOSPACE)
                     setLineSpacing(0f, 1.05f)
@@ -145,17 +148,17 @@ class CrashInfoActivity : ComponentActivity() {
             ).apply { topMargin = dp(4) },
         )
 
-        fun button(label: String, action: () -> Unit): Button = Button(this).apply {
+        fun button(label: String, bg: Int, action: () -> Unit): Button = Button(this).apply {
             text = label
             textSize = 12f
             isAllCaps = false
             includeFontPadding = false
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            val bg = GradientDrawable()
-            bg.cornerRadius = dp(24).toFloat()
-            bg.setColor(0xFF1A73E8.toInt())
-            background = bg
+            val gdb = GradientDrawable()
+            gdb.cornerRadius = dp(24).toFloat()
+            gdb.setColor(bg)
+            background = gdb
             minimumHeight = dp(48)
             setPadding(dp(12), 0, dp(12), 0)
             layoutParams = LinearLayout.LayoutParams(
@@ -178,19 +181,20 @@ class CrashInfoActivity : ComponentActivity() {
             }
         }
 
-        root.addView(button("Log kopieren") {
+        root.addView(button("Log kopieren", 0xFF1A73E8.toInt()) {
             val text = full ?: "(keine Daten)"
             clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", text))
             statusView?.text = "Kopiert — am Smartphone in die Chat-App einfügen"
             runCatching { Toast.makeText(this, "Kopiert", Toast.LENGTH_SHORT).show() }
         })
-        root.addView(button("Log neu hochladen") {
+        root.addView(button("Log neu hochladen", 0xFF1A73E8.toInt()) {
             val newUrl = CrashLog.reupload(this)
-                ?: throw IllegalStateException("Upload fehlgeschlagen (tmpfiles.org und paste.rs nicht erreichbar)")
+                ?: throw IllegalStateException("Upload fehlgeschlagen — " +
+                    (CrashLog.lastUploadError(this) ?: "tmpfiles.org und paste.rs nicht erreichbar"))
             clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
             buildUi(newUrl)
         })
-        root.addView(button("Zurücksetzen") {
+        root.addView(button("Zurücksetzen", 0xFFB3261E.toInt()) {
             CrashLog.clear(this)
             buildUi(null)
             statusView?.text = "Zurückgesetzt"

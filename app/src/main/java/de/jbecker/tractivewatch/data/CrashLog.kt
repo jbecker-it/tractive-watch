@@ -27,10 +27,11 @@ object CrashLog {
     private const val FILE_NAME = "crash.log"
     private const val PREFS = "crash_state"
 
+    // v1.11: LTE-Watch braucht mehr Connect-Timeout (8s reichten nicht)
     private val http = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
     /** Installiert einen globalen Exception-Handler (vor setContent aufrufen). Idempotent. */
@@ -75,7 +76,7 @@ object CrashLog {
             File(appContext.filesDir, FILE_NAME).writeText(sb.toString())
 
             if (prefs.getString("url", null) == null) {
-                upload(prefs, sb.toString())
+                upload(appContext, prefs, sb.toString())
             }
 
             prefs.edit()
@@ -94,9 +95,7 @@ object CrashLog {
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val content = fileContent(appContext, 20_000) ?: return@runCatching null
-        val url = upload(prefs, content)
-        if (url != null) prefs.edit().putString("url", url).apply()
-        url
+        upload(appContext, prefs, content)
     }.getOrNull()
 
     /**
@@ -105,53 +104,77 @@ object CrashLog {
      * 1) tmpfiles.org (Multipart, ~60 Tage)
      * 2) paste.rs (Text, ~90 Tage)
      */
-    private fun upload(prefs: SharedPreferences, content: String): String? {
-        val url = tmpfilesUpload(content) ?: pasteRsUpload(content)
-        if (url != null) prefs.edit().putString("url", url).apply()
-        return url
+    private fun upload(context: Context, prefs: SharedPreferences, content: String): String? {
+        val errors = mutableListOf<String>()
+        val url = tmpfilesUpload(content, errors) ?: pasteRsUpload(content, errors)
+        if (url != null) {
+            prefs.edit().putString("url", url).remove("last_error").apply()
+            AppLog.record(context, "Log-Upload OK: $url")
+            return url
+        }
+        val summary = errors.joinToString("; ").ifBlank { "unbekannter Fehler (kein Netzwerk?)" }
+        runCatching {
+            prefs.edit().putString("last_error", summary).apply()
+            AppLog.record(context, "Log-Upload FEHLGESCHLAGEN — $summary")
+        }
+        return null
     }
 
     /** tmpfiles.org: Antwort {"status":"success","data":{"url":"https://tmpfiles.org/xxx/file"}}. */
-    private fun tmpfilesUpload(content: String): String? = runCatching {
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "file",
-                "tractive-watch-log.txt",
-                content.toRequestBody("text/plain".toMediaType()),
-            )
-            .build()
-        val resp = http.newCall(
-            Request.Builder()
-                .url("https://tmpfiles.org/api/v1/upload")
-                .header("User-Agent", "TractiveWatch-CrashLog/1.10")
-                .post(body)
-                .build(),
-        ).execute()
-        resp.use { r ->
-            val text = r.body?.string().orEmpty()
-            val m = Regex("\"url\"\\s*:\\s*\"(https://tmpfiles\\.org/[^\"]+)\"").find(text)
-                ?: throw IOException("tmpfiles.org: unerwartete Antwort: ${text.take(120)}")
-            // Seiten-Link in Direkt-Download-Link umwandeln
-            m.groupValues[1].replaceFirst("tmpfiles.org/", "tmpfiles.org/dl/")
+    private fun tmpfilesUpload(content: String, errors: MutableList<String>): String? {
+        return try {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    "tractive-watch-log.txt",
+                    content.toRequestBody("text/plain".toMediaType()),
+                )
+                .build()
+            val resp = http.newCall(
+                Request.Builder()
+                    .url("https://tmpfiles.org/api/v1/upload")
+                    .header("User-Agent", "TractiveWatch-CrashLog/1.11")
+                    .post(body)
+                    .build(),
+            ).execute()
+            resp.use { r ->
+                val text = r.body?.string().orEmpty()
+                val m = Regex("\"url\"\\s*:\\s*\"(https://tmpfiles\\.org/[^\"]+)\"").find(text)
+                    ?: throw IOException("tmpfiles.org: unerwartete Antwort: ${text.take(120)}")
+                // Seiten-Link in Direkt-Download-Link umwandeln
+                m.groupValues[1].replaceFirst("tmpfiles.org/", "tmpfiles.org/dl/")
+            }
+        } catch (e: Exception) {
+            errors += "tmpfiles.org: ${shortMsg(e)}"
+            null
         }
-    }.getOrNull()
+    }
 
     /** paste.rs: Antwort IST die URL als Klartext. */
-    private fun pasteRsUpload(content: String): String? = runCatching {
-        val resp = http.newCall(
-            Request.Builder()
-                .url("https://paste.rs/")
-                .header("User-Agent", "TractiveWatch-CrashLog/1.10")
-                .header("Content-Type", "text/plain")
-                .post(content.toRequestBody("text/plain".toMediaType()))
-                .build(),
-        ).execute()
-        resp.use { r ->
-            val url = r.body?.string().orEmpty().trim()
-            if (url.startsWith("http")) url else throw IOException("paste.rs: unerwartete Antwort: ${url.take(120)}")
+    private fun pasteRsUpload(content: String, errors: MutableList<String>): String? {
+        return try {
+            val resp = http.newCall(
+                Request.Builder()
+                    .url("https://paste.rs/")
+                    .header("User-Agent", "TractiveWatch-CrashLog/1.11")
+                    .header("Content-Type", "text/plain")
+                    .post(content.toRequestBody("text/plain".toMediaType()))
+                    .build(),
+            ).execute()
+            resp.use { r ->
+                val url = r.body?.string().orEmpty().trim()
+                if (url.startsWith("http")) url
+                else throw IOException("paste.rs: unerwartete Antwort: ${url.take(120)}")
+            }
+        } catch (e: Exception) {
+            errors += "paste.rs: ${shortMsg(e)}"
+            null
         }
-    }.getOrNull()
+    }
+
+    private fun shortMsg(e: Exception): String =
+        (e.message ?: e.javaClass.simpleName).replace(Regex("\\s+"), " ").take(90)
 
     /** Kurz-Zusammenfassung des letzten Crashes (z. B. "21.11. 14:02 – IllegalStateException: …") */
     fun lastSummary(context: Context): String? {
@@ -165,6 +188,10 @@ object CrashLog {
     /** Hochgeladene Log-URL (tmpfiles.org oder paste.rs), null wenn keine */
     fun lastUrl(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("url", null)
+
+    /** Grund des letzten Upload-Fehlers (z. B. "tmpfiles.org: timeout; paste.rs: …"), null wenn OK. */
+    fun lastUploadError(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("last_error", null)
 
     /**
      * Vollständiges Log von den lokalen Dateien: Crash-Log + Event-Trail (abgeschnitten).

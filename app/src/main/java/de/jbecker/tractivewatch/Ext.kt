@@ -25,10 +25,26 @@ fun Throwable.friendlyMessage(): String = when (this) {
 
 fun fmtTime(t: String?): String {
     if (t.isNullOrBlank()) return ""
+    val s = t.trim()
+    // Tractive liefert Unix-Epochen (Sekunden oder Millisekunden) als String
+    if (s.all { it.isDigit() } && s.length in 9..16) {
+        val ms = if (s.length >= 13) s.toLongOrNull() else s.toLongOrNull()?.times(1000L)
+        if (ms != null) {
+            return runCatching {
+                val zdt = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+                val time = String.format(Locale.getDefault(), "%02d:%02d", zdt.hour, zdt.minute)
+                if (zdt.toLocalDate() == java.time.ZonedDateTime.now().toLocalDate()) {
+                    time
+                } else {
+                    String.format(Locale.getDefault(), "%d.%02d. %s", zdt.dayOfMonth, zdt.monthValue, time)
+                }
+            }.getOrDefault(s)
+        }
+    }
     return runCatching {
-        val time = java.time.OffsetDateTime.parse(t).toLocalTime()
+        val time = java.time.OffsetDateTime.parse(s).toLocalTime()
         String.format(Locale.getDefault(), "%02d:%02d", time.hour, time.minute)
-    }.getOrDefault(t)
+    }.getOrDefault(s)
 }
 
 fun fmtAccuracy(m: Double?): String {

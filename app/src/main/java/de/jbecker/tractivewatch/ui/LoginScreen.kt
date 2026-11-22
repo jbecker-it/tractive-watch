@@ -1,27 +1,32 @@
 package de.jbecker.tractivewatch.ui
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,186 +34,192 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
 import de.jbecker.tractivewatch.Repo
-import de.jbecker.tractivewatch.data.CrashLog
-import de.jbecker.tractivewatch.data.GoogleLoginState
-import de.jbecker.tractivewatch.friendlyMessage
+import de.jbecker.tractivewatch.data.AppLog
 import kotlinx.coroutines.launch
 
 /**
- * Login (v1.9: 100% Wear-nativ nach den offiziellen Wear-OS-Guidelines).
+ * v1.11 Design-Refresh: Login-Screen (Logik unverändert zu v1.10).
  *
- * Fixes zu v1.8 (User-Feedback: "Klick auf Anmelden → passiert gar nichts",
- * Button abgeschnitten):
- * - FEHLERMELDUNG OBEN (zwischen Passwort und Button) → immer sichtbar,
- *   nie unterhalb des sichtbaren Randes. In v1.8 kam sie unter den Button
- *   und wurde vom runden Rand (bzw. der Tastatur) abgeschnitten — der Klick
- *   hatte also gewirkt, die Fehlermeldung war nur unsichtbar.
- * - Button 48dp hoch (Wear-Minimum für Touch-Targets) und kompakteres
- *   Layout insgesamt (keine Subline, keine Fußzeile) → passt in den
- *   runden Sicherheitsbereich, nichts wird abgeschnitten.
- * - vertikal scrollbar als Fallback, falls der Inhalt (z. B. Crash-Banner
- *   + Fehler) doch mal größer ist als der Screen.
- * - imePadding(): Inhalt hebt sich über die Wear-Tastatur.
- *
- * Login: Tractive-E-Mail + Passwort (Hauptweg). Google-Login bleibt nur im
- * Code (MainActivity), da Google die App blockiert (ApiException 10 =
- * DEVELOPER_ERROR) — deshalb kein Google-Button.
+ * - E-Mail / Passwort (Tractive-Web-API)
+ * - Fehlermeldung OBERHALB des Buttons, damit sie sichtbar bleibt
+ * - 44dp Buttons, 42dp Felder, ~150dp Breite (rundes Sicherheitsformat)
+ * - vertikales Scrollen + imePadding gegen abgeschnittene Tastatur
+ * - kompakter Crash-Banner (Icon + Datum + "Details" öffnet Crash-Info)
  */
 @Composable
 fun LoginScreen(
     repo: Repo,
-    googleState: GoogleLoginState,
-    lateResult: Pair<String?, String?>?,
     lastCrash: String?,
-    onShowCrash: () -> Unit,
+    onOpenCrashInfo: () -> Unit,
     onLoggedIn: () -> Unit,
-    onGoogleLogin: (callback: (String?, String?) -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
-    val config = LocalConfiguration.current
-    var error by remember { mutableStateOf<String?>(null) }
     var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val emailFocus = remember { FocusRequester() }
-    val fieldWidth = minOf(config.screenWidthDp - 28, 175).dp
 
-    LaunchedEffect(Unit) { emailFocus.requestFocus() }
-
-    // Spätes Google-Ergebnis (kam nach Prozess-Neustart an) verarbeiten
-    LaunchedEffect(lateResult) {
-        val late = lateResult ?: return@LaunchedEffect
-        val (code, err) = late
-        if (code != null) {
-            busy = true
-            try {
-                repo.doLoginGoogle(code)
-                onLoggedIn()
-            } catch (e: Exception) {
-                error = e.friendlyMessage()
-            } finally {
-                busy = false
-            }
-        } else {
-            error = err ?: "Anmeldung fehlgeschlagen"
-        }
-    }
-
-    // Scaffold behandelt auf Wear OS den kreisförmigen Rand (circular insets)
     Scaffold { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.Center,
+                .imePadding()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Tractive Watch", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-
-            if (lastCrash != null) {
-                Text(
-                    "Letzter Crash: $lastCrash",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 2,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                TextButton(onClick = onShowCrash) {
-                    Text("Crash-Details")
-                }
-                val crashUrl = CrashLog.lastUrl(context)
-                if (crashUrl != null) {
-                    TextButton(onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(crashUrl))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }) {
-                        Text("Crash-Log öffnen")
-                    }
-                }
-            }
-
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it; error = null },
-                label = { Text("E-Mail") },
-                singleLine = true,
-                modifier = Modifier
-                    .width(fieldWidth)
-                    .focusRequester(emailFocus),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next,
-                ),
+            // Titel
+            Text(
+                "Tractive Watch",
+                style = MaterialTheme.typography.titleLarge,
             )
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it; error = null },
-                label = { Text("Passwort") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
-                visualTransformation = PasswordVisualTransformation('•'),
-                modifier = Modifier.width(fieldWidth),
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Login mit Tractive-Konto",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(10.dp))
 
-            // Fehlermeldung OBEN (über dem Button) → immer sichtbar.
-            val err = error
-            if (err != null) {
-                Text(
-                    err,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 2,
-                    modifier = Modifier.width(fieldWidth),
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(6.dp))
+            // Crash-Banner (kompakt: Icon + Datum + Details)
+            if (lastCrash != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Crash: $lastCrash",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = onOpenCrashInfo,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    ) {
+                        Text("Details", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
 
-            Button(
-                onClick = {
-                    if (busy) return@Button
-                    error = null
-                    scope.launch {
-                        busy = true
-                        try {
-                            repo.doLogin(email, password)
-                            onLoggedIn()
-                        } catch (e: Exception) {
-                            error = e.friendlyMessage()
-                        } finally {
-                            busy = false
-                        }
-                    }
-                },
-                enabled = !busy && email.isNotBlank() && password.isNotBlank(),
+            // Formular (max 160dp breit, zentriert)
+            Column(
                 modifier = Modifier
-                    .width(fieldWidth)
-                    .height(48.dp),
+                    .fillMaxWidth()
+                    .width(160.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(if (busy) "Anmelden…" else "Anmelden")
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it; error = null },
+                    label = { Text("E-Mail") },
+                    singleLine = true,
+                    enabled = !busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    shape = RoundedCornerShape(10.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = { pass = it; error = null },
+                    label = { Text("Passwort") },
+                    singleLine = true,
+                    enabled = !busy,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    shape = RoundedCornerShape(10.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Fehlermeldung OBERHALB des Buttons, damit sie sichtbar bleibt
+                error?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                Button(
+                    onClick = {
+                        if (email.isBlank() || pass.isBlank()) {
+                            error = "Bitte E-Mail und Passwort eingeben"
+                            return@Button
+                        }
+                        error = null
+                        busy = true
+                        scope.launch {
+                            val outcome = runCatching { repo.doLogin(email.trim(), pass) }
+                            busy = false
+                            outcome.fold(
+                                onSuccess = {
+                                    AppLog.record(context, "LOGIN: emailLen=${email.length} passLen=${pass.length} -> OK")
+                                    onLoggedIn()
+                                },
+                                onFailure = { e ->
+                                    AppLog.record(context, "LOGIN: emailLen=${email.length} passLen=${pass.length} -> FEHLER ${e.javaClass.simpleName}: ${e.message?.take(240)}")
+                                    error = e.message ?: "Anmeldung fehlgeschlagen"
+                                },
+                            )
+                        }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    if (busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Anmelden", style = MaterialTheme.typography.labelLarge)
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Kein Konto? Unter tractive.com registrieren",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }

@@ -12,8 +12,8 @@ android {
         applicationId = "de.jbecker.tractivewatch"
         minSdk = 30
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.10"
+        versionCode = 12
+        versionName = "1.11"
     }
 
     buildTypes {
@@ -40,6 +40,9 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.7.5")
     implementation("androidx.compose.foundation:foundation:1.7.5")
     implementation("androidx.compose.material3:material3:1.3.0")
+    // Core-Icon-Satz (ArrowBack, LocationOn, Refresh, ExitToApp, Warning) —
+    // v1.11 Design-Refresh
+    implementation("androidx.compose.material:material-icons-core:1.7.5")
     implementation("androidx.compose.animation:animation:1.7.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.moshi:moshi:1.15.2")
