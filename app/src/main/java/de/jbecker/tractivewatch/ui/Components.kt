@@ -2,21 +2,70 @@ package de.jbecker.tractivewatch.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TextToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SwitchButton
+import androidx.wear.compose.material3.Text
 
 /**
- * v1.12: Geteilte Wear-UI-Bausteine (nur Wear Compose, kein Phone-Material3).
+ * Geteilte Wear-UI-Bausteine (nur Wear Compose, kein Phone-Material3).
  */
+
+/**
+ * Standard-Screen: ScreenScaffold (TimeText, ScrollIndicator, Crown-Scrolling)
+ * + ScalingLazyColumn mit korrektem Rand-Padding für das runde Display.
+ */
+@Composable
+fun WearList(content: ScalingLazyListScope.() -> Unit) {
+    val state = rememberScalingLazyListState()
+    ScreenScaffold(scrollState = state) { contentPadding ->
+        ScalingLazyColumn(
+            state = state,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxWidth(),
+            content = content,
+        )
+    }
+}
+
+/** Zentrierte Überschrift oben in einer Liste. */
+@Composable
+fun Header(text: String) {
+    ListHeader {
+        Text(
+            text,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+        )
+    }
+}
+
+/** Kleiner zentrierter Hinweis-/Fehlertext. */
+@Composable
+fun Note(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
 
 /** Kleiner Verbindungs-Status-Punkt (grün = live, grau = getrennt/verbindet). */
 @Composable
@@ -30,26 +79,29 @@ fun StatusDot(live: Boolean) {
 }
 
 /**
- * LED / Piep / Live-Umschalter mit Haptic-Feedback (Wear [TextToggleButton]).
+ * LED / Ton / Live als volle Wear-[SwitchButton]-Zeile mit Haptic-Feedback.
  *
- * @param label Beschriftung (z. B. "LED", "Piep", "Live")
- * @param checked aktueller Zustand
- * @param onToggle wird mit dem NEUEN Zustand aufgerufen; ruft den Befehl beim Tracker ab
+ * [onToggle] schickt den Befehl an den Tracker; der Schalterzustand kommt
+ * ausschließlich aus [checked] (UI-State wird erst bei Erfolg geändert).
  */
 @Composable
-fun CommandToggle(
+fun CommandSwitch(
     label: String,
     checked: Boolean,
-    onToggle: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    secondary: String? = null,
+    onToggle: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    TextToggleButton(
+    SwitchButton(
         checked = checked,
         onCheckedChange = {
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            onToggle(it)
+            onToggle()
         },
-    ) {
-        Text(label)
-    }
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        secondaryLabel = secondary?.let { { Text(it) } },
+        label = { Text(label) },
+    )
 }

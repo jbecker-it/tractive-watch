@@ -75,14 +75,20 @@ object CrashLog {
             val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             File(appContext.filesDir, FILE_NAME).writeText(sb.toString())
 
-            if (prefs.getString("url", null) == null) {
-                upload(appContext, prefs, sb.toString())
-            }
-
+            // Zusammenfassung ZUERST und synchron (commit) sichern — der Prozess
+            // stirbt direkt nach dem Handler, apply() würde evtl. nie geschrieben.
             prefs.edit()
                 .putString("summary", "${t.javaClass.simpleName}: ${t.message ?: "(keine Meldung)"}")
                 .putLong("time", System.currentTimeMillis())
-                .apply()
+                .commit()
+
+            if (prefs.getString("url", null) == null) {
+                // Netzwerk auf dem Main-Thread wirft NetworkOnMainThreadException
+                // -> Upload in eigenem Thread, mit Zeitlimit abwarten.
+                val worker = Thread { runCatching { upload(appContext, prefs, sb.toString()) } }
+                worker.start()
+                worker.join(15_000)
+            }
         }
     }
 
@@ -91,12 +97,26 @@ object CrashLog {
      * die neue URL. v1.9: funktioniert auch OHNE crash.log (Event-Trail reicht) —
      * v1.8 konnte nur crash.log hochladen und scheiterte sonst still.
      */
+    /**
+     * Blockierender Upload — NIE auf dem Main-Thread aufrufen
+     * (NetworkOnMainThreadException). Für UI: [reuploadAsync].
+     */
     fun reupload(context: Context): String? = runCatching {
         val appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val content = fileContent(appContext, 20_000) ?: return@runCatching null
         upload(appContext, prefs, content)
     }.getOrNull()
+
+    /** Upload im Hintergrund; [onDone] läuft auf dem Main-Thread (null = fehlgeschlagen). */
+    fun reuploadAsync(context: Context, onDone: (String?) -> Unit) {
+        val appContext = context.applicationContext
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread {
+            val url = reupload(appContext)
+            main.post { onDone(url) }
+        }.start()
+    }
 
     /**
      * Upload + URL merken. 0x0.st hat Uploads dauerhaft deaktiviert (Nov 2026,

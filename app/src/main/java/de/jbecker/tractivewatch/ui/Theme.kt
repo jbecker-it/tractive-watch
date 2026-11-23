@@ -8,7 +8,7 @@ import androidx.wear.compose.material3.MaterialTheme
 /**
  * v1.12: Wear-M3-Farbpalette (dunkel, für Pixel Watch 40/45 mm).
  *
- * [ColorScheme] in wear-m3 1.7.x ist eine public class mit Defaults — wir
+ * [ColorScheme] in wear-m3 1.6.x ist eine public class mit Defaults — wir
  * konstruieren über den No-Arg-Konstruktor und [ColorScheme.copy] (beide im
  * wear-m3-Quelljar verifiziert). Kein Phone-Material3.
  */

@@ -2,21 +2,18 @@ package de.jbecker.tractivewatch
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.CrashLog
 import de.jbecker.tractivewatch.ui.HomeScreen
@@ -27,17 +24,21 @@ import de.jbecker.tractivewatch.ui.SettingsScreen
 import de.jbecker.tractivewatch.ui.TractiveWatchTheme
 
 /**
- * v1.12: MainActivity (Wear Compose).
+ * MainActivity (Wear Compose).
  *
  * AppScaffold am Wurzel (TimeText auf allen Screens), SwipeDismissableNavHost
  * für die Navigation (Swipe rechts = zurück). Fünf Routen: login, home,
  * pet/{index}, map/{index}, settings.
+ *
+ * v1.13: WICHTIG — SwipeDismissableNavHost braucht den WearNavigator, also
+ * [rememberSwipeDismissableNavController] und [androidx.wear.compose.navigation.composable].
+ * Mit rememberNavController()/navigation.compose.composable (v1.12) bricht der
+ * NavHost STILL ab und zeichnet nichts -> schwarzer Screen, "App startet nicht".
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        AppLog.record(this, "START: MainActivity.onCreate")
+        AppLog.record(this, "START: MainActivity.onCreate (v${BuildConfig.VERSION_NAME})")
 
         setContent {
             TractiveWatchTheme {
@@ -49,72 +50,86 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+object Routes {
+    const val LOGIN = "login"
+    const val HOME = "home"
+    const val PET = "pet/{index}"
+    const val MAP = "map/{index}"
+    const val SETTINGS = "settings"
+
+    fun pet(i: Int) = "pet/$i"
+    fun map(i: Int) = "map/$i"
+}
+
+/** Ersetzt den kompletten Backstack durch [route] (Login <-> Home). */
+private fun NavHostController.resetTo(route: String) {
+    navigate(route) {
+        popUpTo(graph.id) { inclusive = true }
+        launchSingleTop = true
+    }
+}
+
 @Composable
 private fun AppNav() {
     val context = LocalContext.current
-    val repo = remember { Repo(context) }
-    val navController = rememberNavController()
-    var lastCrash by remember {
-        mutableStateOf<String?>(CrashLog.lastSummary(context))
+    val repo = remember { Repo.get(context) }
+    val navController = rememberSwipeDismissableNavController()
+    val lastCrash = remember { CrashLog.lastSummary(context) }
+
+    // Gespeicherte Session -> direkt Home (wie bis v1.11), sonst Login.
+    val start = remember {
+        val restore = runCatching { repo.canRestoreSession }.getOrDefault(false)
+        AppLog.record(context, "NAV: Start-Route = ${if (restore) Routes.HOME else Routes.LOGIN}")
+        if (restore) Routes.HOME else Routes.LOGIN
     }
+
+    val indexArg = listOf(navArgument("index") { type = NavType.IntType })
 
     SwipeDismissableNavHost(
         navController = navController,
-        startDestination = "login",
+        startDestination = start,
     ) {
-        composable("login") {
+        composable(Routes.LOGIN) {
             LoginScreen(
                 repo = repo,
                 lastCrash = lastCrash,
                 onOpenCrashInfo = {
                     context.startActivity(Intent(context, CrashInfoActivity::class.java))
                 },
-                onLoggedIn = {
-                    navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
-                    }
-                },
+                onLoggedIn = { navController.resetTo(Routes.HOME) },
             )
         }
-        composable("home") {
+        composable(Routes.HOME) {
             HomeScreen(
                 repo = repo,
-                onOpenPet = { i -> navController.navigate("pet/$i") },
-                onOpenSettings = { navController.navigate("settings") },
+                onOpenPet = { i -> navController.navigate(Routes.pet(i)) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
-        composable(
-            "pet/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType }),
-        ) { backStack ->
+        composable(Routes.PET, arguments = indexArg) { backStack ->
             val i = backStack.arguments?.getInt("index") ?: 0
             PetScreen(
                 repo = repo,
                 index = i,
-                onOpenMap = { navController.navigate("map/$i") },
+                onOpenMap = { navController.navigate(Routes.map(i)) },
                 onFinished = { navController.popBackStack() },
             )
         }
-        composable(
-            "map/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType }),
-        ) { backStack ->
+        composable(Routes.MAP, arguments = indexArg) { backStack ->
             val i = backStack.arguments?.getInt("index") ?: 0
             MapScreen(
                 repo = repo,
                 index = i,
-                onOpenPet = { navController.navigate("pet/$i") },
                 onFinished = { navController.popBackStack() },
             )
         }
-        composable("settings") {
+        composable(Routes.SETTINGS) {
             SettingsScreen(
                 repo = repo,
-                onLoggedOut = {
-                    navController.navigate("login") {
-                        popUpTo("login") { inclusive = true }
-                    }
+                onOpenCrashInfo = {
+                    context.startActivity(Intent(context, CrashInfoActivity::class.java))
                 },
+                onLoggedOut = { navController.resetTo(Routes.LOGIN) },
             )
         }
     }

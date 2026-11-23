@@ -188,11 +188,18 @@ class CrashInfoActivity : ComponentActivity() {
             runCatching { Toast.makeText(this, "Kopiert", Toast.LENGTH_SHORT).show() }
         })
         root.addView(button("Log neu hochladen", 0xFF1A73E8.toInt()) {
-            val newUrl = CrashLog.reupload(this)
-                ?: throw IllegalStateException("Upload fehlgeschlagen — " +
-                    (CrashLog.lastUploadError(this) ?: "tmpfiles.org und paste.rs nicht erreichbar"))
-            clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
-            buildUi(newUrl)
+            statusView?.text = "Lädt hoch…"
+            CrashLog.reuploadAsync(this) { newUrl ->
+                if (isFinishing || isDestroyed) return@reuploadAsync
+                if (newUrl == null) {
+                    statusView?.text = "Upload fehlgeschlagen — " +
+                        (CrashLog.lastUploadError(this) ?: "tmpfiles.org und paste.rs nicht erreichbar")
+                } else {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("tractive-watch", newUrl))
+                    buildUi(newUrl)
+                    statusView?.text = "Hochgeladen + kopiert"
+                }
+            }
         })
         root.addView(button("Zurücksetzen", 0xFFB3261E.toInt()) {
             CrashLog.clear(this)

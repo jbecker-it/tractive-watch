@@ -48,10 +48,9 @@ class TrampolineActivity : ComponentActivity() {
         if (constructionError == null) {
             de.jbecker.tractivewatch.data.AppLog.record(this, "Trampoline: MainActivity-Konstruktion OK -> MainActivity wird gestartet")
             try {
-                startActivity(
-                    Intent(this, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
+                // Kein FLAG_ACTIVITY_NEW_TASK: gleiche Task, sonst kann der
+                // SwipeDismissableNavHost mit leerem Backstack starten.
+                startActivity(Intent(this, MainActivity::class.java))
             } catch (t: Throwable) {
                 Log.e(TAG, "startActivity fehlgeschlagen", t)
                 CrashLog.capture(this, t)
@@ -123,9 +122,8 @@ class TrampolineActivity : ComponentActivity() {
                         Text("Kopieren")
                     }
                     Button(onClick = {
-                        val newUrl = runCatching { CrashLog.reupload(this@TrampolineActivity) }.getOrNull()
-                        newUrl?.let {
-                            clipboard.setText(AnnotatedString(it))
+                        CrashLog.reuploadAsync(this@TrampolineActivity) { newUrl ->
+                            newUrl?.let { clipboard.setText(AnnotatedString(it)) }
                         }
                     }) {
                         Text("Log erneut hochladen + kopieren")

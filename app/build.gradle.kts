@@ -12,8 +12,8 @@ android {
         applicationId = "de.jbecker.tractivewatch"
         minSdk = 30
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.12"
+        versionCode = 14
+        versionName = "1.13"
     }
 
     buildTypes {
@@ -27,6 +27,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
     buildFeatures {
         compose = true
@@ -60,4 +63,10 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     testImplementation("junit:junit:4.13.2")
+    // Robolectric-Start-Test: rendert die echte UI auf der JVM (v1.12 zeigte
+    // nur einen schwarzen Screen, ohne dass ein Test das bemerkt hätte)
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.9.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.9.0")
 }

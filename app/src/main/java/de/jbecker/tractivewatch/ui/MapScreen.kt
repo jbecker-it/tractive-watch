@@ -1,24 +1,19 @@
 package de.jbecker.tractivewatch.ui
 
+import android.app.Activity
 import android.content.Intent
-import androidx.compose.foundation.layout.Box
+import android.net.Uri
+import android.view.WindowManager
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -26,171 +21,162 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import de.jbecker.tractivewatch.Repo
 import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.TrackerUi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import de.jbecker.tractivewatch.fmtAccuracy
+import de.jbecker.tractivewatch.fmtTime
+import de.jbecker.tractivewatch.friendlyMessage
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.Locale
 
 /**
- * v1.12: Karten-Screen (Wear Compose).
- *
- * Zeigt den OSM-Kartenausschnitt (geschützte [OsmMap]-Logik), Zoom-Buttons,
- * LED/Piep-Schnellbefehle mit Haptic, Genauigkeit und Aktionen
- * ("Befehle", "In OSM öffnen", "Beenden").
+ * Karten-Screen (Wear Compose): OSM-Ausschnitt, Zoom, LED/Ton-Schnellbefehle,
+ * Genauigkeit, Aktualisieren und Link zur OSM-Webkarte.
  */
 @Composable
 fun MapScreen(
     repo: Repo,
     index: Int,
-    onOpenPet: (Int) -> Unit,
     onFinished: () -> Unit,
 ) {
     val ui = TrackerUi
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScalingLazyListState()
 
-    val pet = remember(index) { ui.pets.getOrNull(index) ?: ui.pets.firstOrNull() }
-    val trackerId: String? = pet?.trackerId
+    val pet = ui.pets.getOrNull(index)
+    val tid = pet?.trackerId
 
-    var zoom by remember { mutableStateOf(14) }
+    var zoom by remember { mutableIntStateOf(-1) } // -1 = automatisch nach Genauigkeit
+    var busy by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        delay(150)
-        if (trackerId != null) {
-            runCatching { withContext(Dispatchers.IO) { repo.client.posReport(trackerId) } }
+    // Display nur auf der Karte wach halten (nicht app-weit: Akku!)
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+
+    LaunchedEffect(tid) {
+        if (tid != null) {
+            runCatching { repo.refreshPosition(tid) }
                 .onFailure { AppLog.record(context, "posReport: ${it.javaClass.simpleName}") }
         }
-    }
-    DisposableEffect(Unit) {
         repo.startChannel()
-        onDispose { }
     }
 
-    fun send(cmd: String) {
-        val tid = trackerId ?: return
+    fun run(kind: String, block: suspend () -> Unit) {
+        if (busy != null) return
+        busy = kind
+        error = null
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { repo.toggle(tid, cmd) } }
-                .onFailure { AppLog.record(context, "toggle($tid,$cmd): ${it.javaClass.simpleName}") }
+            runCatching { block() }.onFailure {
+                AppLog.record(context, "map $kind: ${it.javaClass.simpleName}: ${it.message?.take(120)}")
+                error = it.friendlyMessage()
+            }
+            busy = null
         }
     }
 
-    ScreenScaffold(scrollState = scrollState) { contentPadding ->
-        ScalingLazyColumn(state = scrollState, contentPadding = contentPadding) {
-            if (pet == null) {
-                item {
-                    Text("Kein Tracker gefunden", style = MaterialTheme.typography.bodyMedium)
-                }
-                item {
-                    TextButton(onClick = onFinished) { Text("Zurück") }
-                }
+    WearList {
+        if (pet == null || tid == null) {
+            item { Header("Kein Tracker") }
+            item { TextButton(onClick = onFinished) { Text("Zurück") } }
+            return@WearList
+        }
+
+        item { Header(pet.name) }
+
+        val pos = ui.position[tid]
+        val effectiveZoom = if (zoom < 0) autoZoom(pos?.accuracy) else zoom
+
+        item {
+            if (pos != null) {
+                OsmMap(pos = pos, zoom = effectiveZoom)
             } else {
-                val tid = pet.trackerId
-                item {
-                    Text(pet.name, style = MaterialTheme.typography.titleLarge)
-                }
+                Note("Keine Position verfügbar")
+            }
+        }
 
-                val pos = ui.position[tid]
-                if (pos != null) {
-                    item {
-                        OsmMap(pos = pos, zoomOverride = zoom)
+        if (pos != null) {
+            item {
+                val t = pos.time?.let { fmtTime(it) }.orEmpty()
+                val acc = pos.accuracy?.let { fmtAccuracy(it) } ?: "Genauigkeit unbekannt"
+                Note(listOf(t, acc).filter { it.isNotEmpty() }.joinToString(" · "))
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { zoom = (effectiveZoom - 1).coerceAtLeast(3) }) {
+                        Text("−", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Text("Zoom $effectiveZoom", style = MaterialTheme.typography.labelSmall)
+                    TextButton(onClick = { zoom = (effectiveZoom + 1).coerceAtMost(19) }) {
+                        Text("+", style = MaterialTheme.typography.titleLarge)
                     }
                 }
+            }
+        }
 
-                item {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { zoom = (zoom - 1).coerceAtLeast(3) }, modifier = Modifier.weight(1f)) {
-                            Text("−")
-                        }
-                        Text(
-                            "Zoom $zoom",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.weight(2f),
+        item {
+            CommandSwitch(
+                "Licht (LED)",
+                checked = ui.led[tid] == true,
+                enabled = busy == null,
+            ) { run("led") { repo.toggle(tid, "led") } }
+        }
+        item {
+            CommandSwitch(
+                "Ton",
+                checked = ui.buzzer[tid] == true,
+                enabled = busy == null,
+            ) { run("buzzer") { repo.toggle(tid, "buzzer") } }
+        }
+
+        error?.let { msg ->
+            item { Note(msg, color = MaterialTheme.colorScheme.error) }
+        }
+
+        item {
+            FilledTonalButton(
+                onClick = { run("refresh") { repo.refreshPosition(tid) } },
+                enabled = busy == null,
+                modifier = Modifier.fillMaxWidth(),
+                icon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                label = { Text(if (busy == "refresh") "Lädt…" else "Aktualisieren") },
+            )
+        }
+
+        if (pos != null) {
+            item {
+                FilledTonalButton(
+                    onClick = {
+                        val z = effectiveZoom
+                        val uri = Uri.parse(
+                            String.format(
+                                Locale.US,
+                                "https://www.openstreetmap.org/?mlat=%.6f&mlon=%.6f#map=%d/%.6f/%.6f",
+                                pos.lat, pos.lon, z, pos.lat, pos.lon,
+                            ),
                         )
-                        TextButton(onClick = { zoom = (zoom + 1).coerceAtMost(18) }, modifier = Modifier.weight(1f)) {
-                            Text("+")
-                        }
-                    }
-                }
-
-                item {
-                    CommandToggle("LED", checked = ui.led[tid] == true) {
-                        ui.led[tid] = !(ui.led[tid] ?: false)
-                        send("led")
-                    }
-                }
-                item {
-                    CommandToggle("Piep", checked = ui.buzzer[tid] == true) {
-                        ui.buzzer[tid] = !(ui.buzzer[tid] ?: false)
-                        send("buzzer")
-                    }
-                }
-
-                if (pos != null) {
-                    item {
-                        Text(
-                            "Genauigkeit",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (pos.accuracy != null) {
-                        item {
-                            Text(
-                                "± ${pos.accuracy} m",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                             )
-                        }
-                    }
-                    if (pos.accuracy == null) {
-                        item {
-                            Text(
-                                "unbekannt",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    Button(onClick = {
-                        scope.launch {
-                            runCatching { withContext(Dispatchers.IO) { repo.client.posReport(tid) } }
-                                .onFailure { AppLog.record(context, "posReport: ${it.javaClass.simpleName}") }
-                        }
-                    }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Aktualisieren")
-                    }
-                }
-
-                item {
-                    Button(onClick = { onOpenPet(index) }) {
-                        Text("Befehle")
-                    }
-                }
-
-                item {
-                    Button(onClick = {
-                        val uri = android.net.Uri.parse("https://www.openstreetmap.org")
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                    }) {
-                        Text("In OSM öffnen")
-                    }
-                }
-
-                item {
-                    TextButton(onClick = onFinished) { Text("Beenden") }
-                }
+                        }.onFailure { error = "Kein Browser auf der Uhr" }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("In OSM öffnen") },
+                )
             }
         }
     }

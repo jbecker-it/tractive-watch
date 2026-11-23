@@ -234,7 +234,7 @@ class TractiveClient(context: Context) {
 
     // ---------- Befehle ----------
 
-    private suspend fun apiPost(path: String): String {
+    private suspend fun apiPost(path: String, retry: Boolean = true): String {
         ensureAuth()
         val empty = ByteArray(0).toRequestBody(null)
         val resp = execute(
@@ -247,11 +247,10 @@ class TractiveClient(context: Context) {
         val text: String
         resp.use { r -> text = r.body?.string().orEmpty() }
         if (!resp.isSuccessful) {
-            if (resp.code == 401 || resp.code == 403) {
+            if (retry && (resp.code == 401 || resp.code == 403)) {
                 userId = null
                 accessToken = null
-                ensureAuth()
-                return apiPost(path)
+                return apiPost(path, retry = false)
             }
             throw TractiveApiError(resp.code, cleanMessage(text))
         }

@@ -3,12 +3,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <uses-feature android:name="android.hardware.type.watch" />
+
     <application
         android:name=".TractiveApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.TractiveWatch">
+        <!-- Eigenständige Wear-App: läuft ohne Companion-App auf dem Handy -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
         <activity
             android:name=".TrampolineActivity"
             android:exported="true">
@@ -34,6 +40,7 @@
         <activity
             android:name=".ui.WearTextInputActivity"
             android:exported="false"
-            android:theme="@style/Theme.TractiveWatch" />
+            android:theme="@style/Theme.TractiveWatch"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize" />
     </application>
 </manifest>

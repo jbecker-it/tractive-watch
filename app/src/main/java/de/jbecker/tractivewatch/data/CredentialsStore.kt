@@ -7,19 +7,31 @@ import androidx.security.crypto.MasterKey
 
 class CredentialsStore(context: Context) {
 
-    private val prefs: SharedPreferences = runCatching {
+    private val prefs: SharedPreferences = openEncrypted(context)
+        ?: run {
+            // Keystore-Schlüssel passt nicht mehr zur Datei (z. B. nach Restore):
+            // kaputte Datei verwerfen und neu anlegen statt Klartext zu lesen.
+            context.deleteSharedPreferences(FILE)
+            openEncrypted(context)
+        }
+        // Letzter Ausweg (Keystore defekt): eigene Datei, nie die verschlüsselte.
+        ?: context.getSharedPreferences("${FILE}_fallback", Context.MODE_PRIVATE)
+
+    private fun openEncrypted(context: Context): SharedPreferences? = runCatching {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
         EncryptedSharedPreferences.create(
             context,
-            "tractive_secure_prefs",
+            FILE,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }.getOrElse {
-        context.getSharedPreferences("tractive_secure_prefs", Context.MODE_PRIVATE)
+        ).also { it.getString("provider", null) } // Entschlüsselung früh testen
+    }.getOrNull()
+
+    private companion object {
+        const val FILE = "tractive_secure_prefs"
     }
 
     /** "email" oder "google" – welcher Login-Provider zuletzt genutzt wurde */

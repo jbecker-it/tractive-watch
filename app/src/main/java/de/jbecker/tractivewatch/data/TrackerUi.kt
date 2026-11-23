@@ -24,6 +24,9 @@ object TrackerUi {
     var channelStatus = mutableStateOf<String?>(null)
     var loading = mutableStateOf(false)
 
+    /** Lesbarer Fehler vom letzten loadPets() (null = ok) */
+    val loadError = mutableStateOf<String?>(null)
+
     fun reset() {
         pets.clear()
         battery.clear()
@@ -34,5 +37,6 @@ object TrackerUi {
         position.clear()
         channelStatus.value = null
         loading.value = false
+        loadError.value = null
     }
 }
