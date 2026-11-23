@@ -1,10 +1,12 @@
 name: Release APK
 
-# Baut bei jedem Tag "v*" die Debug-APK, führt die Tests aus und hängt
-# app-debug.apk an ein GitHub-Release mit gleichem Namen.
+# Baut die Debug-APK, führt die Tests aus und hängt app-debug.apk an das
+# Release "v<versionName>" (aus app/build.gradle.kts). Tag + Release werden
+# vom Workflow selbst angelegt — ausgelöst, wenn sich RELEASE_NOTES.md ändert,
+# oder manuell.
 on:
   push:
-    tags: ["v*"]
+    paths: ["RELEASE_NOTES.md", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
@@ -28,10 +30,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug testDebugUnitTest --console=plain
 
+      - name: Version lesen
+        id: ver
+        run: echo "name=v$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
       - name: Release erstellen
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.ver.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.ver.outputs.name }}
           body_path: RELEASE_NOTES.md
           files: app/build/outputs/apk/debug/app-debug.apk
