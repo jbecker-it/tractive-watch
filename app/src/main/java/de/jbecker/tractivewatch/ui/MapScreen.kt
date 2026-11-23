@@ -1,43 +1,64 @@
 package de.jbecker.tractivewatch.ui
 
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import android.view.WindowManager
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.wear.compose.material3.FilledTonalButton
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TextButton
 import de.jbecker.tractivewatch.Repo
 import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.TrackerUi
 import de.jbecker.tractivewatch.fmtAccuracy
 import de.jbecker.tractivewatch.fmtTime
-import de.jbecker.tractivewatch.friendlyMessage
-import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.delay
+
+/** Gesten-Hinweis nur bei den ersten Kartenaufrufen pro App-Start zeigen. */
+private var hintShownCount = 0
 
 /**
- * Karten-Screen (Wear Compose): OSM-Ausschnitt, Zoom, LED/Ton-Schnellbefehle,
- * Genauigkeit, Aktualisieren und Link zur OSM-Webkarte.
+ * v1.14: Vollbild-Karte. Keine Optionen — die Karte IST die Bedienung:
+ * ziehen, Krone = Zoom, Doppeltipp = hinein, Rand-Wischen = zurück.
+ * Nach manuellem Verschieben wird die Info-Pille zum "zurück zum Tier"-Button.
  */
 @Composable
 fun MapScreen(
@@ -47,14 +68,20 @@ fun MapScreen(
 ) {
     val ui = TrackerUi
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     val pet = ui.pets.getOrNull(index)
     val tid = pet?.trackerId
+    val pos = tid?.let { ui.position[it] }
 
-    var zoom by remember { mutableIntStateOf(-1) } // -1 = automatisch nach Genauigkeit
-    var busy by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val camera = remember {
+        MapCamera(
+            cx = pos?.let { lonToX(it.lon) } ?: 0.5,
+            cy = pos?.let { latToY(it.lat) } ?: 0.5,
+            zoom = pos?.let { autoZoom(it.accuracy).toFloat() } ?: MIN_ZOOM,
+        )
+    }
+    var hadPosition by remember { mutableStateOf(pos != null) }
 
     // Display nur auf der Karte wach halten (nicht app-weit: Akku!)
     DisposableEffect(Unit) {
@@ -64,119 +91,132 @@ fun MapScreen(
     }
 
     LaunchedEffect(tid) {
-        if (tid != null) {
-            runCatching { repo.refreshPosition(tid) }
-                .onFailure { AppLog.record(context, "posReport: ${it.javaClass.simpleName}") }
+        if (tid == null) {
+            onFinished()
+            return@LaunchedEffect
         }
         repo.startChannel()
+        runCatching { repo.refreshPosition(tid) }
+            .onFailure { AppLog.record(context, "map posReport: ${it.javaClass.simpleName}") }
     }
 
-    fun run(kind: String, block: suspend () -> Unit) {
-        if (busy != null) return
-        busy = kind
-        error = null
-        scope.launch {
-            runCatching { block() }.onFailure {
-                AppLog.record(context, "map $kind: ${it.javaClass.simpleName}: ${it.message?.take(120)}")
-                error = it.friendlyMessage()
+    // Folgen: neue Live-Position -> Karte zentriert mit
+    LaunchedEffect(pos, camera.follow) {
+        if (pos != null && camera.follow) {
+            if (!hadPosition) {
+                camera.zoom = autoZoom(pos.accuracy).toFloat()
+                hadPosition = true
             }
-            busy = null
+            camera.centerOn(pos.lat, pos.lon)
         }
     }
 
-    WearList {
-        if (pet == null || tid == null) {
-            item { Header("Kein Tracker") }
-            item { TextButton(onClick = onFinished) { Text("Zurück") } }
-            return@WearList
+    var showHint by remember { mutableStateOf(hintShownCount < 2) }
+    LaunchedEffect(Unit) {
+        if (showHint) {
+            hintShownCount++
+            delay(2600)
+            showHint = false
         }
+    }
 
-        item { Header(pet.name) }
+    ScreenScaffold { _ ->
+        Box(Modifier.fillMaxSize()) {
+            SlippyMap(camera = camera, pos = pos)
 
-        val pos = ui.position[tid]
-        val effectiveZoom = if (zoom < 0) autoZoom(pos?.accuracy) else zoom
+            // Obere Abdunklung, damit die Uhrzeit auf hellen Kacheln lesbar bleibt
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .background(Brush.verticalGradient(listOf(Color(0xAA000000), Color.Transparent))),
+            )
 
-        item {
-            if (pos != null) {
-                OsmMap(pos = pos, zoom = effectiveZoom)
-            } else {
-                Note("Keine Position verfügbar")
-            }
-        }
-
-        if (pos != null) {
-            item {
-                val t = pos.time?.let { fmtTime(it) }.orEmpty()
-                val acc = pos.accuracy?.let { fmtAccuracy(it) } ?: "Genauigkeit unbekannt"
-                Note(listOf(t, acc).filter { it.isNotEmpty() }.joinToString(" · "))
-            }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
+            if (pos == null) {
+                Column(
+                    Modifier
+                        .align(Alignment.Center)
+                        .background(Color(0xCC0A0F14), RoundedCornerShape(16.dp))
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TextButton(onClick = { zoom = (effectiveZoom - 1).coerceAtLeast(3) }) {
-                        Text("−", style = MaterialTheme.typography.titleLarge)
-                    }
-                    Text("Zoom $effectiveZoom", style = MaterialTheme.typography.labelSmall)
-                    TextButton(onClick = { zoom = (effectiveZoom + 1).coerceAtMost(19) }) {
-                        Text("+", style = MaterialTheme.typography.titleLarge)
-                    }
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text("Position wird gesucht…", style = MaterialTheme.typography.labelSmall)
                 }
             }
-        }
 
-        item {
-            CommandSwitch(
-                "Licht (LED)",
-                checked = ui.led[tid] == true,
-                enabled = busy == null,
-            ) { run("led") { repo.toggle(tid, "led") } }
-        }
-        item {
-            CommandSwitch(
-                "Ton",
-                checked = ui.buzzer[tid] == true,
-                enabled = busy == null,
-            ) { run("buzzer") { repo.toggle(tid, "buzzer") } }
-        }
-
-        error?.let { msg ->
-            item { Note(msg, color = MaterialTheme.colorScheme.error) }
-        }
-
-        item {
-            FilledTonalButton(
-                onClick = { run("refresh") { repo.refreshPosition(tid) } },
-                enabled = busy == null,
-                modifier = Modifier.fillMaxWidth(),
-                icon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
-                label = { Text(if (busy == "refresh") "Lädt…" else "Aktualisieren") },
-            )
-        }
-
-        if (pos != null) {
-            item {
-                FilledTonalButton(
-                    onClick = {
-                        val z = effectiveZoom
-                        val uri = Uri.parse(
-                            String.format(
-                                Locale.US,
-                                "https://www.openstreetmap.org/?mlat=%.6f&mlon=%.6f#map=%d/%.6f/%.6f",
-                                pos.lat, pos.lon, z, pos.lat, pos.lon,
-                            ),
-                        )
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }.onFailure { error = "Kein Browser auf der Uhr" }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("In OSM öffnen") },
+            AnimatedVisibility(
+                visible = showHint && pos != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center).padding(top = 90.dp),
+            ) {
+                Text(
+                    "Ziehen · Krone zoomt\nDoppeltipp = näher",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .background(Color(0xB3000000), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                 )
+            }
+
+            // Unten: Info-Pille. Nach dem Verschieben zeigt sie einen Pin und
+            // zentriert per Tipp wieder auf das Tier (kein extra Button nötig).
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                if (pet != null) {
+                    val sub = buildList {
+                        pos?.time?.let { fmtTime(it) }?.takeIf { it.isNotEmpty() }?.let { add(it) }
+                        pos?.accuracy?.let { add(fmtAccuracy(it)) }
+                        if (tid != null && ui.live[tid] == true) add("LIVE")
+                    }.joinToString(" · ")
+                    val away = !camera.follow && pos != null
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (away) Color(0xE61A73E8) else Color(0xCC0A0F14))
+                            .clickable(enabled = away) {
+                                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                                camera.follow = true
+                            }
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AnimatedVisibility(visible = away, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut()) {
+                            Icon(
+                                Icons.Filled.Place,
+                                contentDescription = "Zum Tier",
+                                tint = Color.White,
+                                modifier = Modifier.padding(end = 6.dp).size(18.dp),
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                pet.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (sub.isNotEmpty()) {
+                                Text(
+                                    sub,
+                                    fontSize = 11.sp,
+                                    color = if (away) Color(0xFFE3F2FD) else Color(0xFFB9C7D2),
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+                Text("© OpenStreetMap", fontSize = 8.sp, color = Color(0xFF555555))
             }
         }
     }

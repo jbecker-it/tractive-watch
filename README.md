@@ -22,33 +22,31 @@ Damit steuern und überwachen Sie Ihren Tractive-Tracker direkt vom Handgelenk: 
 
 ## Installation
 
-1. Die aktuelle `app-debug.apk` aus den [Releases](https://github.com/jbecker-it/tractive-watch/releases) herunterladen.
+1. Die aktuelle `tractive-watch.apk` aus den [Releases](https://github.com/jbecker-it/tractive-watch/releases) herunterladen.
 2. Auf der Watch die **Entwicklertools** aktivieren (Einstellungen → System → Info → Softwareversion 7× tippen).
 3. Über den PC installieren:
    ```bash
-   adb install app-debug.apk
+   adb install -r tractive-watch.apk
    ```
    …oder die APK auf die Watch kopieren und dort installieren.
-4. App starten und anmelden:
-   - **Mit Google** — funktioniert genau wie in der offiziellen Tractive-App (Ihr Google-Konto, mit dem Sie sich bei Tractive anmelden).
-   - **Mit E-Mail & Passwort** — alternative Anmeldung (Passwort wird nur lokal verschlüsselt gespeichert).
+4. App starten und mit **E-Mail & Passwort** des Tractive-Kontos anmelden (Passwort wird nur lokal verschlüsselt gespeichert). Google-Login wird nicht unterstützt (Google blockiert Drittanbieter-Apps).
 
-> Hinweis: Es ist eine Debug-Signatur. Bei Updates über ältere Builds ggf. zuerst die alte Version deinstallieren.
+> Hinweis: Ab v1.14 feste Signatur (`keystore/`). Beim Umstieg von v1.13 oder älter einmalig deinstallieren.
 
 ## Ablauf
 
-1. Start → **Mit Google anmelden** (oder E-Mail/Passwort-Formular öffnen)
-2. Home: Tracker-Liste mit Akku, Signal, letzter Position
-3. Tap auf einen Tracker → Karte mit Live-Position (OSM-Tiles)
-4. Zurück → Buttons: **LED an/aus**, **Piepton**, **Live-Tracking**
+1. Start → Anmelden (nur beim ersten Mal)
+2. Home: Tier-Liste mit Akku und letzter Position
+3. Tipp auf ein Tier → Schalter für **Licht**, **Ton**, **Live-Tracking**
+4. **Karte** → Vollbild: ziehen, Krone = Zoom, Doppeltipp = näher, vom Rand wischen = zurück
 
 ## Selbst bauen
 
 Erfordert **JDK 21** und das **Android SDK** (API 35, Build-Tools 35.0.0):
 
 ```bash
-./gradlew assembleDebug
-# APK unter app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease
+# APK unter app/build/outputs/apk/release/app-release.apk
 ```
 
 Projektstruktur:

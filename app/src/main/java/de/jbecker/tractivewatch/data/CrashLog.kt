@@ -56,7 +56,7 @@ object CrashLog {
     fun capture(context: Context, t: Throwable, threadName: String? = null) {
         runCatching {
             val appContext = context.applicationContext
-            AppLog.record(appContext, "CRASH: ${t.javaClass.simpleName}: ${t.message}")
+            AppLog.recordNow(appContext, "CRASH: ${t.javaClass.simpleName}: ${t.message}")
             val sb = StringBuilder()
             val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.GERMAN).format(Date())
             sb.append(time).append(" | Thread: ").append(threadName ?: "unknown").append('\n')

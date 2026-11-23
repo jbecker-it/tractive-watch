@@ -1,26 +1,21 @@
-## v1.13 — Start-Fix + Bugfixes
+## v1.14 — Flüssig + Vollbild-Karte
 
-**Behebt: App startet nicht (schwarzer Screen) in v1.12.**
-Der Wear-NavHost lief ohne WearNavigator und zeichnete still nichts.
+### Performance
+- **Optimierter Release-Build (R8)** statt Debug-APK: Compose läuft im Debug-Build um ein Vielfaches langsamer. Das war der Hauptgrund für das Ruckeln.
+- App-Log wird nicht mehr bei jedem Ereignis auf dem Main-Thread gelesen und geschrieben
+- Karte zeichnet nur noch bei Bewegung (keine Dauer-Animation)
 
-### Fixes
-- Gespeicherte Anmeldung startet wieder direkt in der Tierliste
-- Abmelden: kein Zurück-Swipe mehr in die Einstellungen
-- Karte: LED/Ton wurden doppelt umgeschaltet (falscher Befehl)
-- Befehle: Schalter ändert sich nur bei Erfolg, Fehler werden angezeigt
-- „Aktualisieren“ zeigt die neue Position jetzt wirklich an
-- „Live beenden“ wird nicht mehr abgebrochen
-- Karte mit fester Größe, Marker in der Mitte, Fehleranzeige statt Endlos-Laden
-- Crash-Log-Upload funktioniert (lief vorher auf dem Main-Thread)
-- Keine Endlosschleife bei wiederholtem 401/403
-- Zugangsdaten-Speicher robuster, Backup deaktiviert
-- Display bleibt nur auf der Karte an (Akku)
-
-### Layout
-Wear Material 3 durchgehend: Listenköpfe, Buttons in voller Breite, Schalter für LED/Ton/Live, Tastatur-„Fertig“ beim Login, Bestätigung beim Abmelden.
+### Neue Karte
+Die Karte füllt jetzt die ganze Uhr, ohne Optionen-Buttons:
+- **Ziehen** = verschieben (mit Schwung)
+- **Krone drehen** = zoomen
+- **Doppeltipp** = an der Stelle hineinzoomen, **Pinch** geht auch
+- **Vom linken Rand wischen** = zurück
+- Die Karte folgt dem Tier live. Nach dem Verschieben wird die Info-Pille unten blau, ein Tipp darauf springt zurück zum Tier.
+- Genauigkeitskreis um die Position, Kachel-Cache (auch offline für bereits gesehene Bereiche)
 
 ### Installation
 ```
-adb install -r app-debug.apk
+adb install -r tractive-watch.apk
 ```
-Debug-Signatur: Falls die Installation wegen abweichender Signatur fehlschlägt, zuerst die alte Version deinstallieren (`adb uninstall de.jbecker.tractivewatch`) und neu anmelden.
+**Einmalig:** Ab v1.14 hat die APK eine feste Signatur. Für das Update von v1.13 oder älter zuerst deinstallieren: `adb uninstall de.jbecker.tractivewatch`. Danach neu anmelden. Spätere Updates klappen direkt mit `-r`.

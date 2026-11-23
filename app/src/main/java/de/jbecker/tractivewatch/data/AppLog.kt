@@ -20,21 +20,40 @@ object AppLog {
     private val LOCK = Any()
     private const val MAX_CHARS = 30_000
 
+    // Ein Hintergrund-Thread: Datei-I/O (bis 30 KB lesen+schreiben) lief vorher
+    // bei jedem Ereignis synchron auf dem Main-Thread.
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "AppLog").apply { isDaemon = true }
+    }
+
     fun record(context: Context, event: String) {
+        val ts = SimpleDateFormat("HH:mm:ss", Locale.GERMAN).format(Date())
+        val line = "[$ts] $event\n"
+        val file = File(context.applicationContext.filesDir, "app.log")
+        runCatching { writer.execute { append(file, line) } }
+    }
+
+    /** Synchron schreiben (Crash-Handler: der Prozess stirbt direkt danach). */
+    fun recordNow(context: Context, event: String) {
+        val ts = SimpleDateFormat("HH:mm:ss", Locale.GERMAN).format(Date())
+        append(File(context.applicationContext.filesDir, "app.log"), "[$ts] $event\n")
+    }
+
+    private fun append(file: File, line: String) {
         runCatching {
-            val ts = SimpleDateFormat("HH:mm:ss", Locale.GERMAN).format(Date())
-            val line = "[$ts] $event\n"
-            val file = File(context.filesDir, "app.log")
             synchronized(LOCK) {
-                val old = if (file.exists()) file.readText() else ""
-                val merged = old + line
-                file.writeText(if (merged.length > MAX_CHARS) merged.takeLast(MAX_CHARS) else merged)
+                if (file.exists() && file.length() > MAX_CHARS * 2L) {
+                    file.writeText(file.readText().takeLast(MAX_CHARS))
+                }
+                file.appendText(line)
             }
         }
     }
 
     fun content(context: Context): String =
-        runCatching { File(context.filesDir, "app.log").readText() }.getOrDefault("")
+        runCatching {
+            synchronized(LOCK) { File(context.filesDir, "app.log").readText().takeLast(MAX_CHARS) }
+        }.getOrDefault("")
 
     fun clear(context: Context) {
         runCatching { File(context.filesDir, "app.log").delete() }

@@ -43,8 +43,8 @@ fun HomeScreen(
     // Nur laden, wenn noch nichts da ist (nach Login hat doLogin schon geladen;
     // beim Zurück-Swipen von pet/map NICHT jedes Mal alles neu holen).
     LaunchedEffect(Unit) {
+        repo.startChannel() // zuerst: Live-Daten nicht erst nach dem Laden
         if (ui.pets.isEmpty() && !ui.loading.value) repo.loadPets()
-        repo.startChannel()
     }
 
     WearList {

@@ -12,13 +12,36 @@ android {
         applicationId = "de.jbecker.tractivewatch"
         minSdk = 30
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.13"
+        versionCode = 15
+        versionName = "1.14"
+    }
+
+    // Feste Signatur für Debug UND Release: Updates per "adb install -r"
+    // funktionieren unabhängig davon, wo gebaut wurde (lokal oder GitHub Actions).
+    // Bewusst kein Geheimnis — private Sideload-App, kein Play-Store.
+    signingConfigs {
+        create("shared") {
+            storeFile = rootProject.file("keystore/tractive-watch.jks")
+            storePassword = "tractivewatch"
+            keyAlias = "tractive-watch"
+            keyPassword = "tractivewatch"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
-            isMinifyEnabled = false
+            // R8: Compose läuft im optimierten Release-Build um ein Vielfaches
+            // flüssiger als im Debug-Build (v1.12/v1.13 waren Debug-APKs).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
     compileOptions {
@@ -27,6 +50,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    lint {
+        // lifecycle-2.9-Lint-Check crasht mit dem Lint aus AGP 8.7 (Bug im Detektor)
+        disable += "NullSafeMutableLiveData"
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -49,8 +76,6 @@ dependencies {
     implementation("androidx.wear.compose:compose-navigation:1.6.2")
     implementation("androidx.navigation:navigation-compose:2.8.0")
     debugImplementation("androidx.wear.compose:compose-ui-tooling:1.6.2")
-    // Ongoing Activity: Live-Tracking auf der Uhr + One-Tap zurück zur Karte
-    implementation("androidx.wear:wear-ongoing:1.1.0")
     // Core-Icon-Satz (Refresh, Settings, ExitToApp, Warning, Check, Person, Info)
     implementation("androidx.compose.material:material-icons-core:1.7.5")
     implementation("androidx.compose.animation:animation:1.7.5")
@@ -61,7 +86,6 @@ dependencies {
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
     testImplementation("junit:junit:4.13.2")
     // Robolectric-Start-Test: rendert die echte UI auf der JVM (v1.12 zeigte
     // nur einen schwarzen Screen, ohne dass ein Test das bemerkt hätte)

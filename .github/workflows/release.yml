@@ -1,6 +1,6 @@
 name: Release APK
 
-# Baut die Debug-APK, führt die Tests aus und hängt app-debug.apk an das
+# Baut die optimierte Release-APK, führt die Tests aus und hängt tractive-watch.apk an das
 # Release "v<versionName>" (aus app/build.gradle.kts). Tag + Release werden
 # vom Workflow selbst angelegt — ausgelöst, wenn sich RELEASE_NOTES.md ändert,
 # oder manuell.
@@ -29,7 +29,10 @@ jobs:
       - name: Build + Tests
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug testDebugUnitTest --console=plain
+          ./gradlew assembleRelease testDebugUnitTest --console=plain
+
+      - name: APK benennen
+        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/tractive-watch.apk
 
       - name: Version lesen
         id: ver
@@ -42,4 +45,5 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ steps.ver.outputs.name }}
           body_path: RELEASE_NOTES.md
-          files: app/build/outputs/apk/debug/app-debug.apk
+          # Optimierter R8-Build (deutlich flüssiger als Debug), feste Signatur
+          files: app/build/outputs/apk/release/tractive-watch.apk
