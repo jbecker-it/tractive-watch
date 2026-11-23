@@ -208,10 +208,16 @@ class TractiveClient(context: Context) {
         return text
     }
 
+    /**
+     * Fehlermeldung aus der Antwort. v1.15: Nicht-JSON-Antworten (HTML/Text,
+     * z. B. 404/405) warfen hier JsonEncodingException -> UI zeigte fälschlich
+     * "Netzwerkfehler" statt des HTTP-Fehlers.
+     */
     private fun cleanMessage(body: String): String =
-        moshi.adapter(ApiErrorBody::class.java).fromJson(body)?.message
+        runCatching { moshi.adapter(ApiErrorBody::class.java).fromJson(body)?.message }
+            .getOrNull()
             ?.takeIf { it.isNotBlank() }
-            ?: body.take(200)
+            ?: body.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(200)
 
     // ---------- Daten ----------
 
@@ -234,31 +240,13 @@ class TractiveClient(context: Context) {
 
     // ---------- Befehle ----------
 
-    private suspend fun apiPost(path: String, retry: Boolean = true): String {
-        ensureAuth()
-        val empty = ByteArray(0).toRequestBody(null)
-        val resp = execute(
-            Request.Builder()
-                .url(baseUrl + path)
-                .headers(hdrs(authExtra))
-                .post(empty)
-                .build()
-        )
-        val text: String
-        resp.use { r -> text = r.body?.string().orEmpty() }
-        if (!resp.isSuccessful) {
-            if (retry && (resp.code == 401 || resp.code == 403)) {
-                userId = null
-                accessToken = null
-                return apiPost(path, retry = false)
-            }
-            throw TractiveApiError(resp.code, cleanMessage(text))
-        }
-        return text
-    }
-
+    /**
+     * LED / Ton / Live-Tracking. Die Tractive-API erwartet dafür GET
+     * (wie die Referenz-Implementierung aiotractive) — v1.14 und älter
+     * schickten POST und bekamen eine Nicht-JSON-Fehlerantwort.
+     */
     suspend fun command(trackerId: String, kind: String, on: Boolean) {
-        apiPost("tracker/$trackerId/command/$kind/" + (if (on) "on" else "off"))
+        apiGet("tracker/$trackerId/command/$kind/" + (if (on) "on" else "off"))
     }
 
     fun logout() {

@@ -8,7 +8,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -38,7 +37,6 @@ fun PetScreen(
 ) {
     val ui = TrackerUi
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     // Nicht remembern: die Liste kann nachgeladen werden.
     val pet = ui.pets.getOrNull(index)
@@ -60,13 +58,19 @@ fun PetScreen(
         if (busy != null) return
         busy = kind
         error = null
-        scope.launch {
-            runCatching { repo.toggle(id, kind) }
-                .onFailure {
-                    AppLog.record(context, "toggle($id,$kind): ${it.javaClass.simpleName}: ${it.message?.take(120)}")
-                    error = it.friendlyMessage()
-                }
-            busy = null
+        // Repo-Scope: der Befehl läuft zu Ende, auch wenn man den Screen
+        // verlässt (vorher: ForgottenCoroutineScopeException -> Fehler).
+        repo.scope.launch {
+            try {
+                repo.toggle(id, kind)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.record(context, "toggle($id,$kind): ${e.javaClass.simpleName}: ${e.message?.take(160)}")
+                error = e.friendlyMessage()
+            } finally {
+                busy = null
+            }
         }
     }
 

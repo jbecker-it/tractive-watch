@@ -19,6 +19,9 @@ fun Throwable.friendlyMessage(): String = when (this) {
     is ReauthRequiredError -> "Anmeldung abgelaufen – bitte ab- und erneut anmelden"
     is UnknownHostException, is SocketTimeoutException -> "Keine Netzverbindung"
     is SSLException -> "SSL-Fehler"
+    // Moshi-Parserfehler sind IOExceptions, aber KEIN Netzwerkproblem
+    is com.squareup.moshi.JsonEncodingException,
+    is com.squareup.moshi.JsonDataException -> "Unerwartete Antwort von Tractive"
     is IOException -> "Netzwerkfehler"
     else -> message ?: "Unbekannter Fehler"
 }
