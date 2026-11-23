@@ -1,59 +1,46 @@
 package de.jbecker.tractivewatch.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.sp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ProgressIndicatorDefaults
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import de.jbecker.tractivewatch.Repo
 import de.jbecker.tractivewatch.data.AppLog
 import kotlinx.coroutines.launch
 
 /**
- * v1.11 Design-Refresh: Login-Screen (Logik unverändert zu v1.10).
+ * v1.12: Login-Screen (Wear Compose, kein Phone-Material3).
  *
- * - E-Mail / Passwort (Tractive-Web-API)
- * - Fehlermeldung OBERHALB des Buttons, damit sie sichtbar bleibt
- * - 44dp Buttons, 42dp Felder, ~150dp Breite (rundes Sicherheitsformat)
- * - vertikales Scrollen + imePadding gegen abgeschnittene Tastatur
- * - kompakter Crash-Banner (Icon + Datum + "Details" öffnet Crash-Info)
+ * Wear Compose besitzt kein TextField — die Texteingabe läuft über
+ * [WearTextInputActivity] (System-Keyboard). Die Werte werden als Buttons
+ * dargestellt; ein Tippen öffnet die System-Eingabe.
  */
 @Composable
 fun LoginScreen(
@@ -68,111 +55,96 @@ fun LoginScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScalingLazyListState()
 
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .imePadding()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    val emailLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra(WearTextInputActivity.EXTRA_RESULT)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { email = it; error = null }
+        }
+    }
+    val passLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getStringExtra(WearTextInputActivity.EXTRA_RESULT)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { pass = it; error = null }
+        }
+    }
+
+    fun inputIntent(title: String, initial: String, password: Boolean) =
+        Intent(context, WearTextInputActivity::class.java)
+            .putExtra(WearTextInputActivity.EXTRA_TITLE, title)
+            .putExtra(WearTextInputActivity.EXTRA_INITIAL, initial)
+            .putExtra(WearTextInputActivity.EXTRA_PASSWORD, password)
+
+    ScreenScaffold(scrollState = scrollState) { contentPadding ->
+        ScalingLazyColumn(
+            state = scrollState,
+            contentPadding = contentPadding,
         ) {
-            // Titel
-            Text(
-                "Tractive Watch",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "Login mit Tractive-Konto",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(10.dp))
-
-            // Crash-Banner (kompakt: Icon + Datum + Details)
+            item {
+                Text("Tractive Watch", style = MaterialTheme.typography.titleLarge)
+            }
+            item {
+                Text(
+                    "Login mit Tractive-Konto",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (lastCrash != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Crash: $lastCrash",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        onClick = onOpenCrashInfo,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                    ) {
-                        Text("Details", style = MaterialTheme.typography.labelSmall)
+                item {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = "Crash",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            lastCrash,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onOpenCrashInfo) { Text("Details") }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
             }
-
-            // Formular (max 160dp breit, zentriert)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .width(160.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it; error = null },
-                    label = { Text("E-Mail") },
-                    singleLine = true,
+            item {
+                Button(
+                    onClick = { emailLauncher.launch(inputIntent("E-Mail", email, false)) },
                     enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                    shape = RoundedCornerShape(10.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = pass,
-                    onValueChange = { pass = it; error = null },
-                    label = { Text("Passwort") },
-                    singleLine = true,
+                ) {
+                    Text(if (email.isBlank()) "E-Mail eingeben" else email)
+                }
+            }
+            item {
+                Button(
+                    onClick = { passLauncher.launch(inputIntent("Passwort", pass, true)) },
                     enabled = !busy,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                    shape = RoundedCornerShape(10.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-
-                // Fehlermeldung OBERHALB des Buttons, damit sie sichtbar bleibt
-                error?.let {
+                ) {
+                    Text(if (pass.isBlank()) "Passwort eingeben" else "••••••")
+                }
+            }
+            if (error != null) {
+                item {
                     Text(
-                        it,
+                        error.orEmpty(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(8.dp))
                 }
-
+            }
+            item {
                 Button(
                     onClick = {
                         if (email.isBlank() || pass.isBlank()) {
@@ -186,34 +158,37 @@ fun LoginScreen(
                             busy = false
                             outcome.fold(
                                 onSuccess = {
-                                    AppLog.record(context, "LOGIN: emailLen=${email.length} passLen=${pass.length} -> OK")
+                                    AppLog.record(
+                                        context,
+                                        "LOGIN: emailLen=${email.length} passLen=${pass.length} -> OK",
+                                    )
                                     onLoggedIn()
                                 },
                                 onFailure = { e ->
-                                    AppLog.record(context, "LOGIN: emailLen=${email.length} passLen=${pass.length} -> FEHLER ${e.javaClass.simpleName}: ${e.message?.take(240)}")
+                                    AppLog.record(
+                                        context,
+                                        "LOGIN: emailLen=${email.length} passLen=${pass.length} -> FEHLER ${e.javaClass.simpleName}: ${e.message?.take(240)}",
+                                    )
                                     error = e.message ?: "Anmeldung fehlgeschlagen"
                                 },
                             )
                         }
                     },
                     enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
                 ) {
                     if (busy) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
+                            colors = ProgressIndicatorDefaults.colors(
+                                indicatorColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
                         )
                         Spacer(Modifier.width(8.dp))
                     }
-                    Text("Anmelden", style = MaterialTheme.typography.labelLarge)
+                    Text("Anmelden")
                 }
-
-                Spacer(Modifier.height(10.dp))
+            }
+            item {
                 Text(
                     "Kein Konto? Unter tractive.com registrieren",
                     style = MaterialTheme.typography.labelSmall,

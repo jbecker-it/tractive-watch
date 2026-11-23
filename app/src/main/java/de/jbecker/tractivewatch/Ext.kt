@@ -55,3 +55,13 @@ fun fmtAccuracy(m: Double?): String {
         "± ${m.toInt()} m"
     }
 }
+
+/** "gerade eben" / "vor 3 Min" / "vor 2 Std" — relative Zeit für Positionen. */
+fun relativeTime(epochSeconds: Long): String {
+    val mins = ((System.currentTimeMillis() / 1000 - epochSeconds) / 60).coerceAtLeast(0)
+    return when {
+        mins < 1 -> "gerade eben"
+        mins < 60 -> "vor $mins Min"
+        else -> "vor ${mins / 60} Std"
+    }
+}

@@ -1,4 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tractive Watch</string>
+
+    <!-- Home -->
+    <string name="home_title">Meine Hunde</string>
+    <string name="home_live">Live</string>
+    <string name="home_disconnected">Getrennt</string>
+    <string name="home_connecting">Verbinde…</string>
+    <string name="home_empty">Keine Tracker gefunden</string>
+    <string name="home_retry">Erneut versuchen</string>
+    <string name="home_settings">Einstellungen</string>
+    <string name="home_no_position">keine Position</string>
+    <string name="home_charging">Lädt</string>
+
+    <!-- Pet / Steuerzentrum -->
+    <string name="pet_led">LED</string>
+    <string name="pet_buzzer">Ton</string>
+    <string name="pet_live">Live</string>
+    <string name="pet_map">Karte</string>
+    <string name="pet_find">Finde meinen Hund</string>
+    <string name="pet_settings">Einstellungen</string>
+    <string name="pet_signal">Signal</string>
+    <string name="pet_sensor">Quelle</string>
+    <string name="pet_time">Zeit</string>
+    <string name="pet_error_title">Befehl fehlgeschlagen</string>
+    <string name="pet_error_msg">Tracker nicht erreichbar. Bitte erneut versuchen.</string>
+    <string name="pet_error_ok">OK</string>
+    <string name="pet_no_beacon">Kein Signal</string>
+
+    <!-- Login -->
+    <string name="login_title">Anmelden</string>
+    <string name="login_email_btn">E-Mail eingeben</string>
+    <string name="login_password_btn">Passwort eingeben</string>
+    <string name="login_submit">Anmelden</string>
+    <string name="login_submitting">Anmelde…</string>
+    <string name="login_error_title">Anmelden fehlgeschlagen</string>
+    <string name="login_crash">Crash-Info</string>
+
+    <!-- Einstellungen -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_crash">Crash-Log anzeigen</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_logout">Abmelden</string>
+    <string name="settings_logout_title">Abmelden?</string>
+    <string name="settings_logout_msg">Die Verbindung zu Tractive wird getrennt. Du kannst dich jederzeit wieder anmelden.</string>
+    <string name="settings_confirm">Ja, abmelden</string>
+    <string name="settings_dismiss">Nein</string>
+
+    <!-- Karte -->
+    <string name="map_loading">Karte wird geladen…</string>
+    <string name="map_live_start">Live starten</string>
+    <string name="map_no_position">Keine Position verfügbar</string>
+    <string name="map_attribution">© OpenStreetMap</string>
+
+    <!-- Finde meinen Hund -->
+    <string name="find_title">Finde meinen Hund</string>
+    <string name="find_locating">Position wird bestimmt…</string>
+    <string name="find_no_fix">Keine Positionsbestimmung möglich</string>
+    <string name="find_close">Wird näher</string>
+    <string name="find_farther">Wird weiter</string>
+
+    <!-- Crash-Info -->
+    <string name="crash_title">Crash-Info</string>
+    <string name="crash_empty">Kein lokales Crash-Log vorhanden.</string>
+    <string name="crash_copy">Log kopieren</string>
+    <string name="crash_uploaded">Log hochgeladen</string>
+    <string name="crash_upload_failed">Upload fehlgeschlagen</string>
+
+    <!-- System-Texteingabe -->
+    <string name="input_email_title">E-Mail eingeben</string>
+    <string name="input_password_title">Passwort eingeben</string>
+    <string name="input_done">FERTIG</string>
+
+    <!-- Ongoing Activity -->
+    <string name="ongoing_label">Tractive</string>
+    <string name="ongoing_live">Live-Tracking aktiv</string>
+    <string name="ongoing_action">Karte öffnen</string>
+
+    <!-- Gemeinsames -->
+    <string name="common_ok">OK</string>
+    <string name="common_cancel">Abbrechen</string>
+    <string name="common_close">Schließen</string>
+    <string name="common_error">Fehler</string>
 </resources>

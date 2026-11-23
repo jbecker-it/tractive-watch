@@ -1,90 +1,79 @@
 package de.jbecker.tractivewatch.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import de.jbecker.tractivewatch.data.AppLog
+import de.jbecker.tractivewatch.data.CrashLog
 
 /**
- * v1.11 Design-Refresh: Crash-Bildschirm (wird bei In-App-Crash angezeigt).
- * - Warn-Icon + Titel
- * - Detail (scrollbar, max 110dp)
- * - zwei volle Buttons: Zurücksetzen (Hauptaktion) + Schließen
- * - 46dp Buttons, >= 10sp, im runden Sicherheitsbereich
+ * v1.12: Crash-Screen (Wear Compose).
+ *
+ * Zeigt die Crash-Protokoll-Zusammenfassung und bietet "Zuruecksetzen"
+ * (loescht Zugangsdaten + Protokoll) oder "Verwerfen" (nur Protokoll).
  */
 @Composable
 fun CrashScreen(
-    detail: String,
-    onDismiss: () -> Unit,
+    info: String,
     onReset: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                Icons.Filled.Warning,
-                contentDescription = null,
-                modifier = Modifier.size(26.dp),
-                tint = MaterialTheme.colorScheme.error,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Leider ein Absturz",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                detail,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 110.dp)
-                    .verticalScroll(rememberScrollState()),
-                textAlign = TextAlign.Start,
-            )
-            Spacer(Modifier.height(12.dp))
-            WearPrimaryButton("Zurücksetzen", onClick = onReset)
-            Spacer(Modifier.height(8.dp))
-            Surface(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("Schließen", style = MaterialTheme.typography.labelLarge)
+    val context = LocalContext.current
+    val scrollState = rememberScalingLazyListState()
+
+    ScreenScaffold(scrollState = scrollState) { contentPadding ->
+        ScalingLazyColumn(state = scrollState, contentPadding = contentPadding) {
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = "Warnung",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Crash-Protokoll", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item {
+                Text(
+                    info,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                TextButton(onClick = {
+                    AppLog.record(context, "CRASH: Reset angefordert")
+                    runCatching { CrashLog.clear(context) }
+                    onReset()
+                }) {
+                    Text("Zugangsdaten zuruecksetzen")
+                }
+            }
+            item {
+                TextButton(onClick = {
+                    AppLog.record(context, "CRASH: Protokoll verwerfen")
+                    runCatching { CrashLog.clear(context) }
+                    onDismiss()
+                }) {
+                    Text("Verwerfen")
                 }
             }
         }

@@ -1,27 +1,22 @@
 package de.jbecker.tractivewatch.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import android.content.Intent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,174 +25,173 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import de.jbecker.tractivewatch.Repo
+import de.jbecker.tractivewatch.data.AppLog
 import de.jbecker.tractivewatch.data.TrackerUi
-import de.jbecker.tractivewatch.fmtAccuracy
-import de.jbecker.tractivewatch.fmtTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * v1.11 Design-Refresh: OSM-Karte im runden Format.
+ * v1.12: Karten-Screen (Wear Compose).
  *
- * - Header-Zeile: Zurück-Button + Name (zentriert)
- * - Karte als 150dp-Kreis, Zoom-Buttons als Overlay am rechten Rand
- *   (− / Auto / +) — spart eine komplette Button-Zeile
- * - Toggle-Zeile (LED / Piep / Live) unter der Karte
- * - Info-Zeile (Genauigkeit · Sensor · Uhrzeit) + OSM-Hinweis
- * - alles im runden Sicherheitsbereich, >= 10sp, 34-42dp Targets
+ * Zeigt den OSM-Kartenausschnitt (geschützte [OsmMap]-Logik), Zoom-Buttons,
+ * LED/Piep-Schnellbefehle mit Haptic, Genauigkeit und Aktionen
+ * ("Befehle", "In OSM öffnen", "Beenden").
  */
 @Composable
-fun MapScreen(repo: Repo, pet: TrackerUi.Pet, onBack: () -> Unit) {
+fun MapScreen(
+    repo: Repo,
+    index: Int,
+    onOpenPet: (Int) -> Unit,
+    onFinished: () -> Unit,
+) {
     val ui = TrackerUi
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var zoomOverride by remember { mutableStateOf<Int?>(null) }
+    val scrollState = rememberScalingLazyListState()
 
-    LaunchedEffect(pet.trackerId) {
+    val pet = remember(index) { ui.pets.getOrNull(index) ?: ui.pets.firstOrNull() }
+    val trackerId: String? = pet?.trackerId
+
+    var zoom by remember { mutableStateOf(14) }
+
+    LaunchedEffect(Unit) {
+        delay(150)
+        if (trackerId != null) {
+            runCatching { withContext(Dispatchers.IO) { repo.client.posReport(trackerId) } }
+                .onFailure { AppLog.record(context, "posReport: ${it.javaClass.simpleName}") }
+        }
+    }
+    DisposableEffect(Unit) {
         repo.startChannel()
-        if (ui.position[pet.trackerId] == null) {
-            runCatching {
-                val pos = repo.client.posReport(pet.trackerId)
-                pos.toPosition()?.let { ui.position[pet.trackerId] = it }
-            }
+        onDispose { }
+    }
+
+    fun send(cmd: String) {
+        val tid = trackerId ?: return
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { repo.toggle(tid, cmd) } }
+                .onFailure { AppLog.record(context, "toggle($tid,$cmd): ${it.javaClass.simpleName}") }
         }
     }
 
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        ) {
-            // Header-Zeile: Zurück | Name (zentriert) | Platzhalter (Symmetrie)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                WearRoundButton("Zurück", icon = Icons.Filled.ArrowBack, onClick = onBack)
-                Text(
-                    pet.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp),
-                    textAlign = TextAlign.Center,
-                )
-                Box(Modifier.size(34.dp))
-            }
-            Spacer(Modifier.height(6.dp))
+    ScreenScaffold(scrollState = scrollState) { contentPadding ->
+        ScalingLazyColumn(state = scrollState, contentPadding = contentPadding) {
+            if (pet == null) {
+                item {
+                    Text("Kein Tracker gefunden", style = MaterialTheme.typography.bodyMedium)
+                }
+                item {
+                    TextButton(onClick = onFinished) { Text("Zurück") }
+                }
+            } else {
+                val tid = pet.trackerId
+                item {
+                    Text(pet.name, style = MaterialTheme.typography.titleLarge)
+                }
 
-            Box(
-                modifier = Modifier
-                    .size(150.dp)
-                    .clip(CircleShape),
-            ) {
-                val pos = ui.position[pet.trackerId]
+                val pos = ui.position[tid]
                 if (pos != null) {
-                    OsmMap(pos = pos, zoomOverride = zoomOverride)
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.height(10.dp))
+                    item {
+                        OsmMap(pos = pos, zoomOverride = zoom)
+                    }
+                }
+
+                item {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { zoom = (zoom - 1).coerceAtLeast(3) }, modifier = Modifier.weight(1f)) {
+                            Text("−")
+                        }
                         Text(
-                            "Position laden…",
+                            "Zoom $zoom",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(2f),
+                        )
+                        TextButton(onClick = { zoom = (zoom + 1).coerceAtMost(18) }, modifier = Modifier.weight(1f)) {
+                            Text("+")
+                        }
+                    }
+                }
+
+                item {
+                    CommandToggle("LED", checked = ui.led[tid] == true) {
+                        ui.led[tid] = !(ui.led[tid] ?: false)
+                        send("led")
+                    }
+                }
+                item {
+                    CommandToggle("Piep", checked = ui.buzzer[tid] == true) {
+                        ui.buzzer[tid] = !(ui.buzzer[tid] ?: false)
+                        send("buzzer")
+                    }
+                }
+
+                if (pos != null) {
+                    item {
+                        Text(
+                            "Genauigkeit",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (pos.accuracy != null) {
+                        item {
+                            Text(
+                                "± ${pos.accuracy} m",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (pos.accuracy == null) {
+                        item {
+                            Text(
+                                "unbekannt",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
 
-                // Zoom-Steuerung als Overlay am rechten Kartenrand
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    WearRoundButton(
-                        "Zoom aus",
-                        text = "−",
-                        enabled = pos != null,
-                        onClick = {
-                            zoomOverride = ((zoomOverride ?: autoZoom(pos?.accuracy)) - 1).coerceIn(3, 19)
-                        },
-                    )
-                    WearRoundButton(
-                        "Auto-Zoom",
-                        icon = Icons.Filled.Refresh,
-                        onClick = { zoomOverride = null },
-                    )
-                    WearRoundButton(
-                        "Zoom rein",
-                        text = "+",
-                        enabled = pos != null,
-                        onClick = {
-                            zoomOverride = ((zoomOverride ?: autoZoom(pos?.accuracy)) + 1).coerceIn(3, 19)
-                        },
-                    )
+                item {
+                    Button(onClick = {
+                        scope.launch {
+                            runCatching { withContext(Dispatchers.IO) { repo.client.posReport(tid) } }
+                                .onFailure { AppLog.record(context, "posReport: ${it.javaClass.simpleName}") }
+                        }
+                    }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Aktualisieren")
+                    }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                WearToggle("LED", ui.led[pet.trackerId] ?: false, Modifier.weight(1f)) {
-                    scope.launch { runCatching { repo.toggle(pet.trackerId, "led") } }
+                item {
+                    Button(onClick = { onOpenPet(index) }) {
+                        Text("Befehle")
+                    }
                 }
-                WearToggle("Piep", ui.buzzer[pet.trackerId] ?: false, Modifier.weight(1f)) {
-                    scope.launch { runCatching { repo.toggle(pet.trackerId, "buzzer") } }
-                }
-                WearToggle("Live", ui.live[pet.trackerId] ?: false, Modifier.weight(1f)) {
-                    scope.launch { runCatching { repo.toggle(pet.trackerId, "live") } }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
 
-            // Info-Zeile: eine Zeile, Ellipsis
-            val pos = ui.position[pet.trackerId]
-            val infos = buildList {
-                pos?.let {
-                    val a = fmtAccuracy(it.accuracy)
-                    if (a.isNotEmpty()) add(a)
-                    if (!it.sensor.isNullOrEmpty()) add(it.sensor)
-                    val t = fmtTime(it.time)
-                    if (t.isNotEmpty()) add(t)
+                item {
+                    Button(onClick = {
+                        val uri = android.net.Uri.parse("https://www.openstreetmap.org")
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                    }) {
+                        Text("In OSM öffnen")
+                    }
+                }
+
+                item {
+                    TextButton(onClick = onFinished) { Text("Beenden") }
                 }
             }
-            Text(
-                if (infos.isEmpty()) "Keine Position verfügbar" else infos.joinToString(" · "),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "© OpenStreetMap-Mitwirkende",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }

@@ -12,8 +12,8 @@ android {
         applicationId = "de.jbecker.tractivewatch"
         minSdk = 30
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.11"
+        versionCode = 13
+        versionName = "1.12"
     }
 
     buildTypes {
@@ -39,9 +39,16 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui:1.7.5")
     implementation("androidx.compose.foundation:foundation:1.7.5")
-    implementation("androidx.compose.material3:material3:1.3.0")
-    // Core-Icon-Satz (ArrowBack, LocationOn, Refresh, ExitToApp, Warning) —
-    // v1.11 Design-Refresh
+    // v1.12: Echte Wear-OS-UI-Bibliothek (keine Phone-Material3 mehr).
+    // 1.6.2 = kompatibel mit AGP 8.7.3 + compileSdk 35 + Kotlin 2.1.0.
+    implementation("androidx.wear.compose:compose-material3:1.6.2")
+    implementation("androidx.wear.compose:compose-foundation:1.6.2")
+    implementation("androidx.wear.compose:compose-navigation:1.6.2")
+    implementation("androidx.navigation:navigation-compose:2.8.0")
+    debugImplementation("androidx.wear.compose:compose-ui-tooling:1.6.2")
+    // Ongoing Activity: Live-Tracking auf der Uhr + One-Tap zurück zur Karte
+    implementation("androidx.wear:wear-ongoing:1.1.0")
+    // Core-Icon-Satz (Refresh, Settings, ExitToApp, Warning, Check, Person, Info)
     implementation("androidx.compose.material:material-icons-core:1.7.5")
     implementation("androidx.compose.animation:animation:1.7.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
